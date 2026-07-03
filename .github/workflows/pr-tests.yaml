@@ -55,7 +55,7 @@ jobs:
           GOPATH=$(go env GOPATH) make
 
       - name: Set up Regal
-        uses: StyraInc/setup-regal@v1
+        uses: open-policy-agent/setup-regal@v1
         with:
           version: v0.41.1
 
