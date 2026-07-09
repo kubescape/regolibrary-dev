@@ -1,0 +1,1472 @@
+{
+    "name": "DevOpsBest",
+    "description": "",
+    "attributes": {
+        "builtin": true
+    },
+    "scanningScope": {
+        "matches": [
+            "cluster",
+            "file"
+        ]
+    },
+    "typeTags": [
+        "compliance"
+    ],
+    "version": null,
+    "controls": [
+        {
+            "name": "Configured readiness probe",
+            "attributes": {
+                "controlTypeTags": [
+                    "devops"
+                ]
+            },
+            "description": "Readiness probe is intended to ensure that workload is ready to process network traffic. It is highly recommended to define readiness probe for every worker container. This control finds all the pods where the readiness probe is not configured.",
+            "remediation": "Ensure Readiness probes are configured wherever possible.",
+            "long_description": "Readiness probe is intended to ensure that workload is ready to process network traffic. It is highly recommended to define readiness probe for every worker container. This control finds all the pods where the readiness probe is not configured.",
+            "controlID": "C-0018",
+            "example": "@controls/examples/c018.yaml",
+            "category": {
+                "name": "Workload",
+                "id": "Cat-5"
+            },
+            "baseScore": 3.0,
+            "scanningScope": {
+                "matches": [
+                    "cluster",
+                    "file"
+                ]
+            },
+            "rules": [
+                {
+                    "name": "configured-readiness-probe",
+                    "attributes": {},
+                    "ruleLanguage": "Rego",
+                    "match": [
+                        {
+                            "apiGroups": [
+                                ""
+                            ],
+                            "apiVersions": [
+                                "v1"
+                            ],
+                            "resources": [
+                                "Pod"
+                            ]
+                        },
+                        {
+                            "apiGroups": [
+                                "apps"
+                            ],
+                            "apiVersions": [
+                                "v1"
+                            ],
+                            "resources": [
+                                "Deployment",
+                                "ReplicaSet",
+                                "DaemonSet",
+                                "StatefulSet"
+                            ]
+                        },
+                        {
+                            "apiGroups": [
+                                "batch"
+                            ],
+                            "apiVersions": [
+                                "*"
+                            ],
+                            "resources": [
+                                "Job",
+                                "CronJob"
+                            ]
+                        }
+                    ],
+                    "ruleDependencies": [],
+                    "description": "Readiness probe is not configured",
+                    "remediation": "Ensure Readiness probe is configured",
+                    "ruleQuery": "armo_builtins",
+                    "rule": "# regal ignore:directory-package-mismatch\npackage armo_builtins\n\nimport rego.v1\n\n# Fails if pod does not have container with readinessProbe\ndeny contains msga if {\n\tpod := input[_]\n\tpod.kind == \"Pod\"\n\tcontainer := pod.spec.containers[i]\n\tnot container.readinessProbe\n\tfix_path := {\"path\": sprintf(\"spec.containers[%v].readinessProbe\", [format_int(i, 10)]), \"value\": \"YOUR_VALUE\"}\n\tmsga := {\n\t\t\"alertMessage\": sprintf(\"Container: %v does not have readinessProbe\", [container.name]),\n\t\t\"packagename\": \"armo_builtins\",\n\t\t\"alertScore\": 3,\n\t\t\"fixPaths\": [fix_path],\n\t\t\"failedPaths\": [],\n\t\t\"alertObject\": {\"k8sApiObjects\": [pod]},\n\t}\n}\n\n# Fails if workload does not have container with readinessProbe\ndeny contains msga if {\n\tspec_template_spec_patterns := {\"Deployment\", \"ReplicaSet\", \"DaemonSet\", \"StatefulSet\", \"Job\"}\n\twl := input[_]\n\tspec_template_spec_patterns[wl.kind]\n\tcontainer := wl.spec.template.spec.containers[i]\n\tnot container.readinessProbe\n\tfix_path := {\"path\": sprintf(\"spec.template.spec.containers[%v].readinessProbe\", [format_int(i, 10)]), \"value\": \"YOUR_VALUE\"}\n\tmsga := {\n\t\t\"alertMessage\": sprintf(\"Container: %v in %v: %v   does not have readinessProbe\", [container.name, wl.kind, wl.metadata.name]),\n\t\t\"packagename\": \"armo_builtins\",\n\t\t\"alertScore\": 3,\n\t\t\"fixPaths\": [fix_path],\n\t\t\"failedPaths\": [],\n\t\t\"alertObject\": {\"k8sApiObjects\": [wl]},\n\t}\n}\n\n# Fails if cronjob does not have container with readinessProbe\ndeny contains msga if {\n\twl := input[_]\n\twl.kind == \"CronJob\"\n\tcontainer = wl.spec.jobTemplate.spec.template.spec.containers[i]\n\tnot container.readinessProbe\n\tfix_path := {\"path\": sprintf(\"spec.jobTemplate.spec.template.spec.containers[%v].readinessProbe\", [format_int(i, 10)]), \"value\": \"YOUR_VALUE\"}\n\tmsga := {\n\t\t\"alertMessage\": sprintf(\"Container: %v in %v: %v   does not have readinessProbe\", [container.name, wl.kind, wl.metadata.name]),\n\t\t\"packagename\": \"armo_builtins\",\n\t\t\"alertScore\": 3,\n\t\t\"fixPaths\": [fix_path],\n\t\t\"failedPaths\": [],\n\t\t\"alertObject\": {\"k8sApiObjects\": [wl]},\n\t}\n}\n"
+                }
+            ]
+        },
+        {
+            "name": "Container hostPort",
+            "attributes": {
+                "controlTypeTags": [
+                    "security",
+                    "compliance",
+                    "devops"
+                ]
+            },
+            "description": "Configuring hostPort requires a particular port number. If two objects specify the same HostPort, they could not be deployed to the same node. It may prevent the second object from starting, even if Kubernetes will try reschedule it on another node, provided there are available nodes with sufficient amount of resources. Also, if the number of replicas of such workload is higher than the number of nodes, the deployment will consistently fail.",
+            "remediation": "Avoid usage of hostPort unless it is absolutely necessary, in which case define appropriate exception. Use NodePort / ClusterIP instead.",
+            "long_description": "Workloads (like pod, deployment, etc) that contain a container with hostport. The problem that arises is that if the scale of your workload is larger than the number of nodes in your Kubernetes cluster, the deployment fails. And any two workloads that specify the same HostPort cannot be deployed to the same node. In addition, if the host where your pods are running becomes unavailable, Kubernetes reschedules the pods to different nodes. Thus, if the IP address for your workload changes, external clients of your application will lose access to the pod. The same thing happens when you restart your pods \u2014 Kubernetes reschedules them to a different node if available.\u00a0",
+            "test": "Check for each workload (with container) if it exists inside the container hostPort.\u00a0\u00a0",
+            "controlID": "C-0044",
+            "baseScore": 4.0,
+            "example": "@controls/examples/c044.yaml",
+            "category": {
+                "name": "Network",
+                "id": "Cat-4"
+            },
+            "scanningScope": {
+                "matches": [
+                    "cluster",
+                    "file"
+                ]
+            },
+            "rules": [
+                {
+                    "name": "container-hostPort",
+                    "attributes": {},
+                    "ruleLanguage": "Rego",
+                    "match": [
+                        {
+                            "apiGroups": [
+                                ""
+                            ],
+                            "apiVersions": [
+                                "v1"
+                            ],
+                            "resources": [
+                                "Pod"
+                            ]
+                        },
+                        {
+                            "apiGroups": [
+                                "apps"
+                            ],
+                            "apiVersions": [
+                                "v1"
+                            ],
+                            "resources": [
+                                "Deployment",
+                                "ReplicaSet",
+                                "DaemonSet",
+                                "StatefulSet"
+                            ]
+                        },
+                        {
+                            "apiGroups": [
+                                "batch"
+                            ],
+                            "apiVersions": [
+                                "*"
+                            ],
+                            "resources": [
+                                "Job",
+                                "CronJob"
+                            ]
+                        }
+                    ],
+                    "ruleDependencies": [],
+                    "description": "fails if container has hostPort",
+                    "remediation": "Make sure you do not configure hostPort for the container, if necessary use NodePort / ClusterIP",
+                    "ruleQuery": "armo_builtins",
+                    "rule": "# regal ignore:directory-package-mismatch\npackage armo_builtins\n\nimport rego.v1\n\n# Fails if pod has container with hostPort\ndeny contains msga if {\n\tstart_of_path := \"spec.\"\n\tpod := input[_]\n\tpod.kind == \"Pod\"\n\tcontainer := pod.spec.containers[i]\n\tpath := is_host_port(container, i, start_of_path)\n\tmsga := {\n\t\t\"alertMessage\": sprintf(\"Container: %v has Host-port\", [container.name]),\n\t\t\"packagename\": \"armo_builtins\",\n\t\t\"alertScore\": 4,\n\t\t\"deletePaths\": path,\n\t\t\"failedPaths\": path,\n\t\t\"fixPaths\": [],\n\t\t\"alertObject\": {\"k8sApiObjects\": [pod]},\n\t}\n}\n\n# Fails if workload has container with hostPort\ndeny contains msga if {\n\tstart_of_path := \"spec.template.spec.\"\n\tspec_template_spec_patterns := {\"Deployment\", \"ReplicaSet\", \"DaemonSet\", \"StatefulSet\", \"Job\"}\n\twl := input[_]\n\tspec_template_spec_patterns[wl.kind]\n\tcontainer := wl.spec.template.spec.containers[i]\n\tpath := is_host_port(container, i, start_of_path)\n\tmsga := {\n\t\t\"alertMessage\": sprintf(\"Container: %v in %v: %v   has Host-port\", [container.name, wl.kind, wl.metadata.name]),\n\t\t\"packagename\": \"armo_builtins\",\n\t\t\"alertScore\": 4,\n\t\t\"deletePaths\": path,\n\t\t\"failedPaths\": path,\n\t\t\"fixPaths\": [],\n\t\t\"alertObject\": {\"k8sApiObjects\": [wl]},\n\t}\n}\n\n# Fails if cronjob has container with hostPort\ndeny contains msga if {\n\tstart_of_path := \"spec.jobTemplate.spec.template.spec.\"\n\twl := input[_]\n\twl.kind == \"CronJob\"\n\tcontainer = wl.spec.jobTemplate.spec.template.spec.containers[i]\n\tpath := is_host_port(container, i, start_of_path)\n\tmsga := {\n\t\t\"alertMessage\": sprintf(\"Container: %v in %v: %v   has Host-port\", [container.name, wl.kind, wl.metadata.name]),\n\t\t\"packagename\": \"armo_builtins\",\n\t\t\"alertScore\": 4,\n\t\t\"deletePaths\": path,\n\t\t\"failedPaths\": path,\n\t\t\"fixPaths\": [],\n\t\t\"alertObject\": {\"k8sApiObjects\": [wl]},\n\t}\n}\n\nis_host_port(container, i, start_of_path) := path if {\n\tpath = [sprintf(\"%vcontainers[%v].ports[%v].hostPort\", [start_of_path, format_int(i, 10), format_int(j, 10)]) | port = container.ports[j]; port.hostPort]\n\tcount(path) > 0\n}\n"
+                }
+            ]
+        },
+        {
+            "name": "Configured liveness probe",
+            "attributes": {
+                "controlTypeTags": [
+                    "devops"
+                ]
+            },
+            "description": "Liveness probe is intended to ensure that workload remains healthy during its entire execution lifecycle, or otherwise restrat the container. It is highly recommended to define liveness probe for every worker container. This control finds all the pods where the Liveness probe is not configured.",
+            "remediation": "Ensure Liveness probes are configured wherever possible.",
+            "long_description": "Liveness probe is intended to ensure that workload remains healthy during its entire execution lifecycle, or otherwise restrat the container. It is highly recommended to define liveness probe for every worker container. This control finds all the pods where the Liveness probe is not configured.",
+            "controlID": "C-0056",
+            "category": {
+                "name": "Workload",
+                "id": "Cat-5"
+            },
+            "baseScore": 4.0,
+            "scanningScope": {
+                "matches": [
+                    "cluster",
+                    "file"
+                ]
+            },
+            "rules": [
+                {
+                    "name": "configured-liveness-probe",
+                    "attributes": {},
+                    "ruleLanguage": "Rego",
+                    "match": [
+                        {
+                            "apiGroups": [
+                                ""
+                            ],
+                            "apiVersions": [
+                                "v1"
+                            ],
+                            "resources": [
+                                "Pod"
+                            ]
+                        },
+                        {
+                            "apiGroups": [
+                                "apps"
+                            ],
+                            "apiVersions": [
+                                "v1"
+                            ],
+                            "resources": [
+                                "Deployment",
+                                "ReplicaSet",
+                                "DaemonSet",
+                                "StatefulSet"
+                            ]
+                        },
+                        {
+                            "apiGroups": [
+                                "batch"
+                            ],
+                            "apiVersions": [
+                                "*"
+                            ],
+                            "resources": [
+                                "Job",
+                                "CronJob"
+                            ]
+                        }
+                    ],
+                    "ruleDependencies": [],
+                    "description": "Liveness probe is not configured",
+                    "remediation": "Ensure Liveness probe is configured",
+                    "ruleQuery": "armo_builtins",
+                    "rule": "# regal ignore:directory-package-mismatch\npackage armo_builtins\n\nimport rego.v1\n\n# Fails if  container does not have livenessProbe - for pod\ndeny contains msga if {\n\tpod := input[_]\n\tpod.kind == \"Pod\"\n\tcontainer := pod.spec.containers[i]\n\tnot container.livenessProbe\n\tfix_path := {\"path\": sprintf(\"spec.containers[%v].livenessProbe\", [format_int(i, 10)]), \"value\": \"YOUR_VALUE\"}\n\tmsga := {\n\t\t\"alertMessage\": sprintf(\"Container: %v does not have livenessProbe\", [container.name]),\n\t\t\"packagename\": \"armo_builtins\",\n\t\t\"alertScore\": 4,\n\t\t\"fixPaths\": [fix_path],\n\t\t\"failedPaths\": [],\n\t\t\"alertObject\": {\"k8sApiObjects\": [pod]},\n\t}\n}\n\n# Fails if  container does not have livenessProbe - for wl\ndeny contains msga if {\n\tspec_template_spec_patterns := {\"Deployment\", \"ReplicaSet\", \"DaemonSet\", \"StatefulSet\", \"Job\"}\n\twl := input[_]\n\tspec_template_spec_patterns[wl.kind]\n\tcontainer := wl.spec.template.spec.containers[i]\n\tnot container.livenessProbe\n\tfix_path := {\"path\": sprintf(\"spec.template.spec.containers[%v].livenessProbe\", [format_int(i, 10)]), \"value\": \"YOUR_VALUE\"}\n\tmsga := {\n\t\t\"alertMessage\": sprintf(\"Container: %v in %v: %v   does not have livenessProbe\", [container.name, wl.kind, wl.metadata.name]),\n\t\t\"packagename\": \"armo_builtins\",\n\t\t\"alertScore\": 4,\n\t\t\"fixPaths\": [fix_path],\n\t\t\"failedPaths\": [],\n\t\t\"alertObject\": {\"k8sApiObjects\": [wl]},\n\t}\n}\n\n# Fails if  container does not have livenessProbe - for cronjob\ndeny contains msga if {\n\twl := input[_]\n\twl.kind == \"CronJob\"\n\tcontainer = wl.spec.jobTemplate.spec.template.spec.containers[i]\n\tnot container.livenessProbe\n\tfix_path := {\"path\": sprintf(\"spec.jobTemplate.spec.template.spec.containers[%v].livenessProbe\", [format_int(i, 10)]), \"value\": \"YOUR_VALUE\"}\n\tmsga := {\n\t\t\"alertMessage\": sprintf(\"Container: %v in %v: %v   does not have livenessProbe\", [container.name, wl.kind, wl.metadata.name]),\n\t\t\"packagename\": \"armo_builtins\",\n\t\t\"alertScore\": 4,\n\t\t\"fixPaths\": [fix_path],\n\t\t\"failedPaths\": [],\n\t\t\"alertObject\": {\"k8sApiObjects\": [wl]},\n\t}\n}\n"
+                }
+            ]
+        },
+        {
+            "name": "Pods in default namespace",
+            "attributes": {
+                "controlTypeTags": [
+                    "compliance",
+                    "devops"
+                ]
+            },
+            "description": "It is recommended to avoid running pods in cluster without explicit namespace assignment. This control identifies all the pods running in the default namespace.",
+            "remediation": "Create necessary namespaces and move all the pods from default namespace there.",
+            "long_description": "It is recommended to avoid running pods in cluster without explicit namespace assignment. This may lead to wrong capabilities and permissions assignment and potential compromises. This control identifies all the pods running in the default namespace.",
+            "test": "Check that there are no pods in the 'default' namespace",
+            "controlID": "C-0061",
+            "category": {
+                "name": "Workload",
+                "id": "Cat-5"
+            },
+            "baseScore": 3.0,
+            "scanningScope": {
+                "matches": [
+                    "cluster",
+                    "file"
+                ]
+            },
+            "rules": [
+                {
+                    "name": "pods-in-default-namespace",
+                    "attributes": {},
+                    "ruleLanguage": "Rego",
+                    "match": [
+                        {
+                            "apiGroups": [
+                                ""
+                            ],
+                            "apiVersions": [
+                                "v1"
+                            ],
+                            "resources": [
+                                "Pod"
+                            ]
+                        },
+                        {
+                            "apiGroups": [
+                                "apps"
+                            ],
+                            "apiVersions": [
+                                "v1"
+                            ],
+                            "resources": [
+                                "Deployment",
+                                "ReplicaSet",
+                                "DaemonSet",
+                                "StatefulSet"
+                            ]
+                        },
+                        {
+                            "apiGroups": [
+                                "batch"
+                            ],
+                            "apiVersions": [
+                                "*"
+                            ],
+                            "resources": [
+                                "Job",
+                                "CronJob"
+                            ]
+                        }
+                    ],
+                    "ruleDependencies": [],
+                    "description": "",
+                    "remediation": "",
+                    "ruleQuery": "armo_builtins",
+                    "rule": "# regal ignore:directory-package-mismatch\npackage armo_builtins\n\nimport rego.v1\n\ndeny contains msga if {\n\tspec_template_spec_patterns := {\"Deployment\", \"ReplicaSet\", \"DaemonSet\", \"StatefulSet\", \"Job\", \"CronJob\", \"Pod\"}\n\twl := input[_]\n\tspec_template_spec_patterns[wl.kind]\n\tresult := is_default_namespace(wl.metadata)\n\tfailed_path := get_failed_path(result)\n\tfixed_path := get_fixed_path(result)\n\tmsga := {\n\t\t\"alertMessage\": sprintf(\"%v: %v has pods running in the 'default' namespace\", [wl.kind, wl.metadata.name]),\n\t\t\"packagename\": \"armo_builtins\",\n\t\t\"alertScore\": 3,\n\t\t\"reviewPaths\": failed_path,\n\t\t\"failedPaths\": failed_path,\n\t\t\"fixPaths\": fixed_path,\n\t\t\"alertObject\": {\"k8sApiObjects\": [wl]},\n\t}\n}\n\nis_default_namespace(metadata) := [failed_path, fixPath] if {\n\tmetadata.namespace == \"default\"\n\tfailed_path = \"metadata.namespace\"\n\tfixPath = \"\"\n}\n\nis_default_namespace(metadata) := [failed_path, fixPath] if {\n\tnot metadata.namespace\n\tfailed_path = \"\"\n\tfixPath = {\"path\": \"metadata.namespace\", \"value\": \"YOUR_NAMESPACE\"}\n}\n\nget_failed_path(paths) := [paths[0]] if {\n\tpaths[0] != \"\"\n} else := []\n\nget_fixed_path(paths) := [paths[1]] if {\n\tpaths[1] != \"\"\n} else := []\n"
+                }
+            ]
+        },
+        {
+            "name": "Naked pods",
+            "attributes": {
+                "controlTypeTags": [
+                    "devops"
+                ]
+            },
+            "description": "It is not recommended to create pods without parental Deployment, ReplicaSet, StatefulSet etc.Manual creation if pods may lead to a configuration drifts and other untracked changes in the system. Such pods won't be automatically rescheduled by Kubernetes in case of a crash or infrastructure failure. This control identifies every pod that does not have corresponding parental object.",
+            "remediation": "Create necessary Deployment object for every pod making any pod a first class citizen in your IaC architecture.",
+            "long_description": "It is not recommended to create pods without parental Deployment, ReplicaSet, StatefulSet etc.Manual creation if pods may lead to a configuration drifts and other untracked changes in the system. Such pods won't be automatically rescheduled by Kubernetes in case of a crash or infrastructure failure. This control identifies every pod that does not have corresponding parental object.",
+            "test": "Test if pods are not associated with Deployment, ReplicaSet etc. If not, fail.",
+            "controlID": "C-0073",
+            "category": {
+                "name": "Workload",
+                "id": "Cat-5"
+            },
+            "baseScore": 3.0,
+            "scanningScope": {
+                "matches": [
+                    "cluster",
+                    "file"
+                ]
+            },
+            "rules": [
+                {
+                    "name": "naked-pods",
+                    "attributes": {},
+                    "ruleLanguage": "Rego",
+                    "match": [
+                        {
+                            "apiGroups": [
+                                ""
+                            ],
+                            "apiVersions": [
+                                "v1"
+                            ],
+                            "resources": [
+                                "Pod"
+                            ]
+                        }
+                    ],
+                    "ruleDependencies": [],
+                    "description": "Don't use naked Pods (that is, Pods not bound to a ReplicaSet or Deployment) if you can avoid it. Naked Pods will not be rescheduled in the event of a node failure.",
+                    "remediation": "Create necessary deployment object for every Pod making any Pod a first class citizen in your IaC architecture. Example command: kubectl create deployment nginx-depl --image=nginx:1.19",
+                    "ruleQuery": "armo_builtins",
+                    "rule": "# regal ignore:directory-package-mismatch\npackage armo_builtins\n\nimport rego.v1\n\n# Fails if workload is Pod\ndeny contains msga if {\n\tpod := input[_]\n\tpod.kind == \"Pod\"\n\tnot pod.metadata.ownerReferences\n\tmsga := {\n\t\t\"alertMessage\": sprintf(\"Pod: %v not associated with ReplicaSet or Deployment\", [pod.metadata.name]),\n\t\t\"packagename\": \"armo_builtins\",\n\t\t\"alertScore\": 3,\n\t\t\"failedPaths\": [],\n\t\t\"fixPaths\": [],\n\t\t\"alertObject\": {\"k8sApiObjects\": [pod]},\n\t}\n}\n"
+                }
+            ]
+        },
+        {
+            "name": "Container runtime socket mounted",
+            "attributes": {
+                "controlTypeTags": [
+                    "devops",
+                    "smartRemediation"
+                ]
+            },
+            "description": "Mounting Container runtime socket (Unix socket) enables container to access Container runtime, retrieve sensitive information and execute commands, if Container runtime is available. This control identifies pods that attempt to mount Container runtime socket for accessing Container runtime.",
+            "remediation": "Remove container runtime socket mount request or define an exception.",
+            "long_description": "Mounting Docker socket (Unix socket) enables container to access Docker internals, retrieve sensitive information and execute Docker commands, if Docker runtime is available. This control identifies pods that attempt to mount Docker socket for accessing Docker runtime.",
+            "test": "Check hostpath. If the path is set to one of the container runtime socket, the container has access to container runtime - fail.",
+            "controlID": "C-0074",
+            "baseScore": 5.0,
+            "scanningScope": {
+                "matches": [
+                    "cluster",
+                    "file"
+                ]
+            },
+            "rules": [
+                {
+                    "name": "containers-mounting-docker-socket",
+                    "attributes": {},
+                    "ruleLanguage": "Rego",
+                    "match": [
+                        {
+                            "apiGroups": [
+                                ""
+                            ],
+                            "apiVersions": [
+                                "v1"
+                            ],
+                            "resources": [
+                                "Pod"
+                            ]
+                        },
+                        {
+                            "apiGroups": [
+                                "apps"
+                            ],
+                            "apiVersions": [
+                                "v1"
+                            ],
+                            "resources": [
+                                "Deployment",
+                                "ReplicaSet",
+                                "DaemonSet",
+                                "StatefulSet"
+                            ]
+                        },
+                        {
+                            "apiGroups": [
+                                "batch"
+                            ],
+                            "apiVersions": [
+                                "*"
+                            ],
+                            "resources": [
+                                "Job",
+                                "CronJob"
+                            ]
+                        }
+                    ],
+                    "ruleDependencies": [],
+                    "description": "Check hostpath. If the path is set to one of the container runtime socket, the container has access to container runtime - fail.",
+                    "remediation": "",
+                    "ruleQuery": "armo_builtins",
+                    "rule": "# regal ignore:directory-package-mismatch\npackage armo_builtins\n\nimport rego.v1\n\ndeny contains msga if {\n\tpod := input[_]\n\tpod.kind == \"Pod\"\n\tvolume := pod.spec.volumes[i]\n\thost_path := volume.hostPath\n\tis_runtime_socket_mounting(host_path)\n\tpath := sprintf(\"spec.volumes[%v]\", [format_int(i, 10)])\n\tvolumeMounts := pod.spec.containers[j].volumeMounts\n\tpathMounts = volume_mounts(volume.name, volumeMounts, sprintf(\"spec.containers[%v]\", [j]))\n\tfinalPath := array.concat([path], pathMounts)\n\tmsga := {\n\t\t\"alertMessage\": sprintf(\"volume: %v in pod: %v has mounting to Docker internals.\", [volume.name, pod.metadata.name]),\n\t\t\"packagename\": \"armo_builtins\",\n\t\t\"deletePaths\": finalPath,\n\t\t\"failedPaths\": finalPath,\n\t\t\"fixPaths\": [],\n\t\t\"alertScore\": 5,\n\t\t\"alertObject\": {\"k8sApiObjects\": [pod]},\n\t}\n}\n\ndeny contains msga if {\n\tspec_template_spec_patterns := {\"Deployment\", \"ReplicaSet\", \"DaemonSet\", \"StatefulSet\", \"Job\"}\n\twl := input[_]\n\tspec_template_spec_patterns[wl.kind]\n\tvolume := wl.spec.template.spec.volumes[i]\n\thost_path := volume.hostPath\n\tis_runtime_socket_mounting(host_path)\n\tpath := sprintf(\"spec.template.spec.volumes[%v]\", [format_int(i, 10)])\n\tvolumeMounts := wl.spec.template.spec.containers[j].volumeMounts\n\tpathMounts = volume_mounts(volume.name, volumeMounts, sprintf(\"spec.template.spec.containers[%v]\", [j]))\n\tfinalPath := array.concat([path], pathMounts)\n\tmsga := {\n\t\t\"alertMessage\": sprintf(\"volume: %v in %v: %v has mounting to Docker internals.\", [volume.name, wl.kind, wl.metadata.name]),\n\t\t\"packagename\": \"armo_builtins\",\n\t\t\"deletePaths\": finalPath,\n\t\t\"failedPaths\": finalPath,\n\t\t\"fixPaths\": [],\n\t\t\"alertScore\": 5,\n\t\t\"alertObject\": {\"k8sApiObjects\": [wl]},\n\t}\n}\n\ndeny contains msga if {\n\twl := input[_]\n\twl.kind == \"CronJob\"\n\tvolume = wl.spec.jobTemplate.spec.template.spec.volumes[i]\n\thost_path := volume.hostPath\n\tis_runtime_socket_mounting(host_path)\n\tpath := sprintf(\"spec.jobTemplate.spec.template.spec.volumes[%v]\", [format_int(i, 10)])\n\tvolumeMounts := wl.spec.jobTemplate.spec.template.spec.containers[j].volumeMounts\n\tpathMounts = volume_mounts(volume.name, volumeMounts, sprintf(\"spec.jobTemplate.spec.template.spec.containers[%v]\", [j]))\n\tfinalPath := array.concat([path], pathMounts)\n\tmsga := {\n\t\t\"alertMessage\": sprintf(\"volume: %v in %v: %v has mounting to Docker internals.\", [volume.name, wl.kind, wl.metadata.name]),\n\t\t\"packagename\": \"armo_builtins\",\n\t\t\"deletePaths\": finalPath,\n\t\t\"failedPaths\": finalPath,\n\t\t\"fixPaths\": [],\n\t\t\"alertScore\": 5,\n\t\t\"alertObject\": {\"k8sApiObjects\": [wl]},\n\t}\n}\n\n# handles initContainers for Pod\ndeny contains msga if {\n\tpod := input[_]\n\tpod.kind == \"Pod\"\n\tvolume := pod.spec.volumes[i]\n\thost_path := volume.hostPath\n\tis_runtime_socket_mounting(host_path)\n\tpath := sprintf(\"spec.volumes[%v]\", [format_int(i, 10)])\n\tvolumeMounts := pod.spec.initContainers[j].volumeMounts\n\tpathMounts = volume_mounts(volume.name, volumeMounts, sprintf(\"spec.initContainers[%v]\", [j]))\n\tfinalPath := array.concat([path], pathMounts)\n\tmsga := {\n\t\t\"alertMessage\": sprintf(\"volume: %v in pod: %v has mounting to Docker internals.\", [volume.name, pod.metadata.name]),\n\t\t\"packagename\": \"armo_builtins\",\n\t\t\"deletePaths\": finalPath,\n\t\t\"failedPaths\": finalPath,\n\t\t\"fixPaths\": [],\n\t\t\"alertScore\": 5,\n\t\t\"alertObject\": {\"k8sApiObjects\": [pod]},\n\t}\n}\n\n# handles initContainers for majority of workload resources\ndeny contains msga if {\n\tspec_template_spec_patterns := {\"Deployment\", \"ReplicaSet\", \"DaemonSet\", \"StatefulSet\", \"Job\"}\n\twl := input[_]\n\tspec_template_spec_patterns[wl.kind]\n\tvolume := wl.spec.template.spec.volumes[i]\n\thost_path := volume.hostPath\n\tis_runtime_socket_mounting(host_path)\n\tpath := sprintf(\"spec.template.spec.volumes[%v]\", [format_int(i, 10)])\n\tvolumeMounts := wl.spec.template.spec.initContainers[j].volumeMounts\n\tpathMounts = volume_mounts(volume.name, volumeMounts, sprintf(\"spec.template.spec.initContainers[%v]\", [j]))\n\tfinalPath := array.concat([path], pathMounts)\n\tmsga := {\n\t\t\"alertMessage\": sprintf(\"volume: %v in %v: %v has mounting to Docker internals.\", [volume.name, wl.kind, wl.metadata.name]),\n\t\t\"packagename\": \"armo_builtins\",\n\t\t\"deletePaths\": finalPath,\n\t\t\"failedPaths\": finalPath,\n\t\t\"fixPaths\": [],\n\t\t\"alertScore\": 5,\n\t\t\"alertObject\": {\"k8sApiObjects\": [wl]},\n\t}\n}\n\n# handles initContainers for CronJobs\ndeny contains msga if {\n\twl := input[_]\n\twl.kind == \"CronJob\"\n\tvolume = wl.spec.jobTemplate.spec.template.spec.volumes[i]\n\thost_path := volume.hostPath\n\tis_runtime_socket_mounting(host_path)\n\tpath := sprintf(\"spec.jobTemplate.spec.template.spec.volumes[%v]\", [format_int(i, 10)])\n\tvolumeMounts := wl.spec.jobTemplate.spec.template.spec.initContainers[j].volumeMounts\n\tpathMounts = volume_mounts(volume.name, volumeMounts, sprintf(\"spec.jobTemplate.spec.template.spec.initContainers[%v]\", [j]))\n\tfinalPath := array.concat([path], pathMounts)\n\tmsga := {\n\t\t\"alertMessage\": sprintf(\"volume: %v in %v: %v has mounting to Docker internals.\", [volume.name, wl.kind, wl.metadata.name]),\n\t\t\"packagename\": \"armo_builtins\",\n\t\t\"deletePaths\": finalPath,\n\t\t\"failedPaths\": finalPath,\n\t\t\"fixPaths\": [],\n\t\t\"alertScore\": 5,\n\t\t\"alertObject\": {\"k8sApiObjects\": [wl]},\n\t}\n}\n\nvolume_mounts(name, volume_mounts, str) := [path] if {\n\tname == volume_mounts[j].name\n\tpath := sprintf(\"%s.volumeMounts[%v]\", [str, j])\n} else := []\n\nis_runtime_socket_mounting(host_path) if {\n\thost_path.path == \"/var/run/docker.sock\"\n}\n\nis_runtime_socket_mounting(host_path) if {\n\thost_path.path == \"/var/run/docker\"\n}\n\nis_runtime_socket_mounting(host_path) if {\n\thost_path.path == \"/run/containerd/containerd.sock\"\n}\n\nis_runtime_socket_mounting(host_path) if {\n\thost_path.path == \"/var/run/crio/crio.sock\"\n}\n"
+                }
+            ]
+        },
+        {
+            "name": "Image pull policy on latest tag",
+            "attributes": {
+                "controlTypeTags": [
+                    "devops"
+                ]
+            },
+            "description": "While usage of the latest tag is not generally recommended, in some cases this is necessary. If it is, the ImagePullPolicy must be set to Always, otherwise Kubernetes may run an older image with the same name that happens to be present in the node cache. Note that using Always will not cause additional image downloads because Kubernetes will check the image hash of the local local against the registry and only pull the image if this hash has changed, which is exactly what users want when use the latest tag. This control will identify all pods with latest tag that have ImagePullSecret not set to Always.",
+            "remediation": "Set ImagePullPolicy to Always in all pods found by this control.",
+            "long_description": "While usage of the latest tag is not generally recommended, in some cases this is necessary. If it is, the ImagePullPolicy must be set to Always, otherwise Kubernetes may run an older image with the same name that happens to be present in the node cache. Note that using Always will not cause additional image downloads because Kubernetes will check the image hash of the local local against the registry and only pull the image if this hash has changed, which is exactly what users want when use the latest tag. This control will identify all pods with latest tag that have ImagePullSecret not set to Always. Note as well that some vendors don't use the word latest in the tag. Some other word may also behave like the latest. For example, Redis uses redis:alpine to signify the latest. Therefore, this control treats any word that does not contain digits as the latest. If no tag is specified, the image is treated as latests too.",
+            "test": "If  imagePullPolicy = always pass, else fail.",
+            "controlID": "C-0075",
+            "category": {
+                "name": "Workload",
+                "id": "Cat-5"
+            },
+            "baseScore": 2.0,
+            "scanningScope": {
+                "matches": [
+                    "cluster",
+                    "file"
+                ]
+            },
+            "rules": [
+                {
+                    "name": "image-pull-policy-is-not-set-to-always",
+                    "attributes": {},
+                    "ruleLanguage": "Rego",
+                    "match": [
+                        {
+                            "apiGroups": [
+                                ""
+                            ],
+                            "apiVersions": [
+                                "v1"
+                            ],
+                            "resources": [
+                                "Pod"
+                            ]
+                        },
+                        {
+                            "apiGroups": [
+                                "apps"
+                            ],
+                            "apiVersions": [
+                                "v1"
+                            ],
+                            "resources": [
+                                "Deployment",
+                                "ReplicaSet",
+                                "DaemonSet",
+                                "StatefulSet"
+                            ]
+                        },
+                        {
+                            "apiGroups": [
+                                "batch"
+                            ],
+                            "apiVersions": [
+                                "*"
+                            ],
+                            "resources": [
+                                "Job",
+                                "CronJob"
+                            ]
+                        }
+                    ],
+                    "ruleDependencies": [],
+                    "description": "check imagePullPolicy filed, if imagePullPolicy = always pass, else fail.",
+                    "remediation": "",
+                    "ruleQuery": "armo_builtins",
+                    "rule": "# regal ignore:directory-package-mismatch\npackage armo_builtins\n\nimport rego.v1\n\ndeny contains msga if {\n\tpod := input[_]\n\tpod.kind == \"Pod\"\n\tcontainer := pod.spec.containers[i]\n\tis_bad_container(container)\n\tpaths = [sprintf(\"spec.containers[%v].image\", [format_int(i, 10)]), sprintf(\"spec.containers[%v].imagePullPolicy\", [format_int(i, 10)])]\n\tmsga := {\n\t\t\"alertMessage\": sprintf(\"container: %v in pod: %v  has 'latest' tag on image but imagePullPolicy is not set to 'Always'\", [container.name, pod.metadata.name]),\n\t\t\"packagename\": \"armo_builtins\",\n\t\t\"alertScore\": 2,\n\t\t\"reviewPaths\": paths,\n\t\t\"failedPaths\": paths,\n\t\t\"fixPaths\": [],\n\t\t\"alertObject\": {\"k8sApiObjects\": [pod]},\n\t}\n}\n\ndeny contains msga if {\n\tspec_template_spec_patterns := {\"Deployment\", \"ReplicaSet\", \"DaemonSet\", \"StatefulSet\", \"Job\"}\n\twl := input[_]\n\tspec_template_spec_patterns[wl.kind]\n\tcontainer := wl.spec.template.spec.containers[i]\n\tpaths = [sprintf(\"spec.template.spec.containers[%v].image\", [format_int(i, 10)]), sprintf(\"spec.template.spec.containers[%v].imagePullPolicy\", [format_int(i, 10)])]\n\tis_bad_container(container)\n\tmsga := {\n\t\t\"alertMessage\": sprintf(\"container: %v in %v: %v  has 'latest' tag on image but imagePullPolicy is not set to 'Always'\", [container.name, wl.kind, wl.metadata.name]),\n\t\t\"packagename\": \"armo_builtins\",\n\t\t\"alertScore\": 2,\n\t\t\"reviewPaths\": paths,\n\t\t\"failedPaths\": paths,\n\t\t\"fixPaths\": [],\n\t\t\"alertObject\": {\"k8sApiObjects\": [wl]},\n\t}\n}\n\ndeny contains msga if {\n\twl := input[_]\n\twl.kind == \"CronJob\"\n\tcontainer := wl.spec.jobTemplate.spec.template.spec.containers[i]\n\tpaths = [sprintf(\"spec.jobTemplate.spec.template.spec.containers[%v].image\", [format_int(i, 10)]), sprintf(\"spec.jobTemplate.spec.template.spec.containers[%v].imagePullPolicy\", [format_int(i, 10)])]\n\tis_bad_container(container)\n\tmsga := {\n\t\t\"alertMessage\": sprintf(\"container: %v in cronjob: %v  has 'latest' tag on image but imagePullPolicy is not set to 'Always'\", [container.name, wl.metadata.name]),\n\t\t\"packagename\": \"armo_builtins\",\n\t\t\"alertScore\": 2,\n\t\t\"reviewPaths\": paths,\n\t\t\"failedPaths\": paths,\n\t\t\"fixPaths\": [],\n\t\t\"alertObject\": {\"k8sApiObjects\": [wl]},\n\t}\n}\n\n# image tag is latest\nis_bad_container(container) if {\n\tnot_image_pull_policy(container)\n\treg := \":[\\\\w][\\\\w.-]{0,127}(\\/)?\"\n\tversion := regex.find_all_string_submatch_n(reg, container.image, -1)\n\tv := version[_]\n\timg := v[_]\n\timg == \":latest\"\n}\n\n# No image tag or digest (== latest)\nis_bad_container(container) if {\n\tnot is_tag_image(container.image)\n\tnot_image_pull_policy(container)\n}\n\n# image tag is only letters (== latest)\nis_bad_container(container) if {\n\tis_tag_image_only_letters(container.image)\n\tnot_image_pull_policy(container)\n}\n\nnot_image_pull_policy(container) if {\n\tcontainer.imagePullPolicy == \"Never\"\n}\n\nnot_image_pull_policy(container) if {\n\tcontainer.imagePullPolicy == \"IfNotPresent\"\n}\n\nis_tag_image(image) if {\n\treg := \":[\\\\w][\\\\w.-]{0,127}(\\/)?\"\n\tversion := regex.find_all_string_submatch_n(reg, image, -1)\n\tv := version[_]\n\timg := v[_]\n\tnot endswith(img, \"/\")\n}\n\n# The image has a tag, and contains only letters\nis_tag_image_only_letters(image) if {\n\treg1 := \"^:[a-zA-Z]{1,127}$\"\n\treg := \":[\\\\w][\\\\w.-]{0,127}(\\/)?\"\n\tversion := regex.find_all_string_submatch_n(reg, image, -1)\n\tv := version[_]\n\timg := v[_]\n\tregex.match(reg1, img)\n}\n"
+                }
+            ]
+        },
+        {
+            "name": "Label usage for resources",
+            "attributes": {
+                "actionRequired": "configuration",
+                "controlTypeTags": [
+                    "devops"
+                ]
+            },
+            "description": "It is recommended to set labels that identify semantic attributes of your application or deployment. For example, { app: myapp, tier: frontend, phase: test, deployment: v3 }. These labels can used to assign policies to logical groups of the deployments as well as for presentation and tracking purposes. This control helps you find deployments without any of the expected labels.",
+            "remediation": "Define labels that are most suitable to your needs of use the exceptions to prevent further notifications.",
+            "long_description": "It is recommended to set labels that identify semantic attributes of your application or deployment. For example, { app: myapp, tier: frontend, phase: test, deployment: v3 }. These labels can used to assign policies to logical groups of the deployments as well as for presentation and tracking purposes. This control helps you find deployments without any of the expected labels.",
+            "test": "Test will check if a certain set of labels is defined, this is a configurable control. Initial list: app, tier, phase, version, owner, env.",
+            "controlID": "C-0076",
+            "category": {
+                "name": "Workload",
+                "id": "Cat-5"
+            },
+            "baseScore": 2.0,
+            "scanningScope": {
+                "matches": [
+                    "cluster",
+                    "file"
+                ]
+            },
+            "rules": [
+                {
+                    "name": "label-usage-for-resources",
+                    "attributes": {},
+                    "ruleLanguage": "Rego",
+                    "match": [
+                        {
+                            "apiGroups": [
+                                ""
+                            ],
+                            "apiVersions": [
+                                "v1"
+                            ],
+                            "resources": [
+                                "Pod"
+                            ]
+                        },
+                        {
+                            "apiGroups": [
+                                "apps"
+                            ],
+                            "apiVersions": [
+                                "v1"
+                            ],
+                            "resources": [
+                                "Deployment",
+                                "ReplicaSet",
+                                "DaemonSet",
+                                "StatefulSet"
+                            ]
+                        },
+                        {
+                            "apiGroups": [
+                                "batch"
+                            ],
+                            "apiVersions": [
+                                "*"
+                            ],
+                            "resources": [
+                                "Job",
+                                "CronJob"
+                            ]
+                        }
+                    ],
+                    "ruleDependencies": [],
+                    "configInputs": [
+                        "settings.postureControlInputs.recommendedLabels"
+                    ],
+                    "controlConfigInputs": [
+                        {
+                            "path": "settings.postureControlInputs.recommendedLabels",
+                            "name": "Recommended Labels",
+                            "description": "Kubescape checks that workloads have at least one label that identifies semantic attributes."
+                        }
+                    ],
+                    "description": "check if a certain set of labels is defined, this is a configurable control. Initial list: app, tier, phase, version, owner, env.",
+                    "remediation": "",
+                    "ruleQuery": "armo_builtins",
+                    "rule": "# regal ignore:directory-package-mismatch\npackage armo_builtins\n\nimport rego.v1\n\n# Deny mutating action unless user is in group owning the resource\n\ndeny contains msga if {\n\tpod := input[_]\n\tpod.kind == \"Pod\"\n\tfixPath := no_label_or_no_label_usage(pod, \"\")\n\n\tmsga := {\n\t\t\"alertMessage\": sprintf(\"in the following pods a certain set of labels is not defined: %v\", [pod.metadata.name]),\n\t\t\"packagename\": \"armo_builtins\",\n\t\t\"alertScore\": 2,\n\t\t\"failedPaths\": [],\n\t\t\"fixPaths\": fixPath,\n\t\t\"alertObject\": {\"k8sApiObjects\": [pod]},\n\t}\n}\n\ndeny contains msga if {\n\tspec_template_spec_patterns := {\"Deployment\", \"ReplicaSet\", \"DaemonSet\", \"StatefulSet\", \"Job\"}\n\tbeggining_of_pod_path := \"spec.template.\"\n\twl := input[_]\n\tspec_template_spec_patterns[wl.kind]\n\tpodSpec := wl.spec.template\n\tfixPath := no_label_usage(wl, podSpec, beggining_of_pod_path)\n\n\tmsga := {\n\t\t\"alertMessage\": sprintf(\"%v: %v a certain set of labels is not defined:\", [wl.kind, wl.metadata.name]),\n\t\t\"packagename\": \"armo_builtins\",\n\t\t\"alertScore\": 2,\n\t\t\"failedPaths\": [],\n\t\t\"fixPaths\": fixPath,\n\t\t\"alertObject\": {\"k8sApiObjects\": [wl]},\n\t}\n}\n\n# handles cronjob\ndeny contains msga if {\n\tbeggining_of_pod_path := \"spec.jobTemplate.spec.template.\"\n\twl := input[_]\n\twl.kind == \"CronJob\"\n\tpodSpec := wl.spec.jobTemplate.spec.template\n\tfixPath := no_label_usage(wl, podSpec, beggining_of_pod_path)\n\n\tmsga := {\n\t\t\"alertMessage\": sprintf(\"the following cronjobs a certain set of labels is not defined: %v\", [wl.metadata.name]),\n\t\t\"packagename\": \"armo_builtins\",\n\t\t\"alertScore\": 2,\n\t\t\"failedPaths\": [],\n\t\t\"fixPaths\": fixPath,\n\t\t\"alertObject\": {\"k8sApiObjects\": [wl]},\n\t}\n}\n\n# There is no label-usage in WL and also for his Pod\nno_label_usage(wl, podSpec, beggining_of_pod_path) := path if {\n\tpath1 := no_label_or_no_label_usage(wl, \"\")\n\tpath2 := no_label_or_no_label_usage(podSpec, beggining_of_pod_path)\n\tpath = array.concat(path1, path2)\n}\n\n# There is label-usage for WL but not for his Pod\nno_label_usage(wl, podSpec, beggining_of_pod_path) := path if {\n\tnot no_label_or_no_label_usage(wl, \"\")\n\tpath := no_label_or_no_label_usage(podSpec, beggining_of_pod_path)\n}\n\n# There is no label-usage for WL but there is for his Pod\nno_label_usage(wl, podSpec, beggining_of_pod_path) := path if {\n\tnot no_label_or_no_label_usage(podSpec, beggining_of_pod_path)\n\tpath := no_label_or_no_label_usage(wl, \"\")\n}\n\nno_label_or_no_label_usage(wl, start_of_path) := path if {\n\tnot wl.metadata\n\tlabel_key := get_label_key(\"\")\n\tpath = [{\"path\": sprintf(\"%vmetadata.labels[%v]\", [start_of_path, label_key]), \"value\": \"YOUR_VALUE\"}]\n}\n\nno_label_or_no_label_usage(wl, start_of_path) := path if {\n\tmetadata := wl.metadata\n\tnot metadata.labels\n\tlabel_key := get_label_key(\"\")\n\tpath = [{\"path\": sprintf(\"%vmetadata.labels[%v]\", [start_of_path, label_key]), \"value\": \"YOUR_VALUE\"}]\n}\n\nno_label_or_no_label_usage(wl, start_of_path) := path if {\n\tlabels := wl.metadata.labels\n\tnot is_desired_label(labels)\n\tlabel_key := get_label_key(\"\")\n\tpath = [{\"path\": sprintf(\"%vmetadata.labels[%v]\", [start_of_path, label_key]), \"value\": \"YOUR_VALUE\"}]\n}\n\nis_desired_label(labels) if {\n\trecommended_labels := data.postureControlInputs.recommendedLabels\n\trecommended_label := recommended_labels[_]\n\tlabels[recommended_label]\n}\n\n# get_label_key accepts a parameter so it's not considered a rule\nget_label_key(unused_param) := key if {\n\trecommended_labels := data.postureControlInputs.recommendedLabels\n\tcount(recommended_labels) > 0\n\tkey := recommended_labels[0]\n} else := \"YOUR_LABEL\"\n"
+                }
+            ]
+        },
+        {
+            "name": "K8s common labels usage",
+            "attributes": {
+                "actionRequired": "configuration",
+                "controlTypeTags": [
+                    "devops"
+                ]
+            },
+            "description": "Kubernetes common labels help manage and monitor Kubernetes cluster using different tools such as kubectl, dashboard and others in an interoperable way. Refer to https://kubernetes.io/docs/concepts/overview/working-with-objects/common-labels/ for more information. This control helps you find objects that don't have any of these labels defined.",
+            "remediation": "Define applicable labels or use the exception mechanism to prevent further notifications.",
+            "long_description": "Kubernetes common labels help manage and monitor Kubernetes cluster using different tools such as kubectl, dashboard and others in an interoperable way. Refer to https://kubernetes.io/docs/concepts/overview/working-with-objects/common-labels/ for more information. This control helps you find objects that don't have any of these labels defined.",
+            "test": "Test will check if the list of label that start with app.kubernetes.io/ are defined.",
+            "controlID": "C-0077",
+            "baseScore": 2.0,
+            "category": {
+                "name": "Workload",
+                "id": "Cat-5"
+            },
+            "scanningScope": {
+                "matches": [
+                    "cluster",
+                    "file"
+                ]
+            },
+            "rules": [
+                {
+                    "name": "k8s-common-labels-usage",
+                    "attributes": {},
+                    "ruleLanguage": "Rego",
+                    "match": [
+                        {
+                            "apiGroups": [
+                                ""
+                            ],
+                            "apiVersions": [
+                                "v1"
+                            ],
+                            "resources": [
+                                "Pod"
+                            ]
+                        },
+                        {
+                            "apiGroups": [
+                                "apps"
+                            ],
+                            "apiVersions": [
+                                "v1"
+                            ],
+                            "resources": [
+                                "Deployment",
+                                "ReplicaSet",
+                                "DaemonSet",
+                                "StatefulSet"
+                            ]
+                        },
+                        {
+                            "apiGroups": [
+                                "batch"
+                            ],
+                            "apiVersions": [
+                                "*"
+                            ],
+                            "resources": [
+                                "Job",
+                                "CronJob"
+                            ]
+                        }
+                    ],
+                    "ruleDependencies": [],
+                    "configInputs": [
+                        "settings.postureControlInputs.k8sRecommendedLabels"
+                    ],
+                    "controlConfigInputs": [
+                        {
+                            "path": "settings.postureControlInputs.k8sRecommendedLabels",
+                            "name": "Kubernetes Recommended Labels",
+                            "description": "Kubescape checks that workloads have at least one of this list of configurable labels, as recommended in the Kubernetes documentation."
+                        }
+                    ],
+                    "description": "Check if the list of label that start with app.kubernetes.io/ are defined.",
+                    "remediation": "",
+                    "ruleQuery": "armo_builtins",
+                    "rule": "# regal ignore:directory-package-mismatch\npackage armo_builtins\n\nimport rego.v1\n\n# Deny mutating action unless user is in group owning the resource\n\ndeny contains msga if {\n\tpod := input[_]\n\tpod.kind == \"Pod\"\n\tfixPath := no_K8s_label_or_no_K8s_label_usage(pod, \"\")\n\n\tmsga := {\n\t\t\"alertMessage\": sprintf(\"in the following pod the kubernetes common labels are not defined: %v\", [pod.metadata.name]),\n\t\t\"packagename\": \"armo_builtins\",\n\t\t\"alertScore\": 1,\n\t\t\"failedPaths\": [],\n\t\t\"fixPaths\": fixPath,\n\t\t\"alertObject\": {\"k8sApiObjects\": [pod]},\n\t}\n}\n\ndeny contains msga if {\n\tspec_template_spec_patterns := {\"Deployment\", \"ReplicaSet\", \"DaemonSet\", \"StatefulSet\", \"Job\"}\n\tbeggining_of_pod_path := \"spec.template.\"\n\twl := input[_]\n\tspec_template_spec_patterns[wl.kind]\n\tpodSpec := wl.spec.template\n\tfixPath := no_K8s_label_usage(wl, podSpec, beggining_of_pod_path)\n\n\tmsga := {\n\t\t\"alertMessage\": sprintf(\"%v: %v the kubernetes common labels are is not defined:\", [wl.kind, wl.metadata.name]),\n\t\t\"packagename\": \"armo_builtins\",\n\t\t\"alertScore\": 1,\n\t\t\"failedPaths\": [],\n\t\t\"fixPaths\": fixPath,\n\t\t\"alertObject\": {\"k8sApiObjects\": [wl]},\n\t}\n}\n\n# handles cronjob\ndeny contains msga if {\t\n\tbeggining_of_pod_path := \"spec.jobTemplate.spec.template.\"\n\twl := input[_]\n\twl.kind == \"CronJob\"\n\tpodSpec := wl.spec.jobTemplate.spec.template\n\tfixPath := no_K8s_label_usage(wl, podSpec, beggining_of_pod_path)\n\n\tmsga := {\n\t\t\"alertMessage\": sprintf(\"the following cronjobs the kubernetes common labels are not defined: %v\", [wl.metadata.name]),\n\t\t\"packagename\": \"armo_builtins\",\n\t\t\"alertScore\": 1,\n\t\t\"failedPaths\": [],\n\t\t\"fixPaths\": fixPath,\n\t\t\"alertObject\": {\"k8sApiObjects\": [wl]},\n\t}\n}\n\n# There is no label-usage in WL and also for his Pod\nno_K8s_label_usage(wl, podSpec, beggining_of_pod_path) := path if {\n\tpath1 := no_K8s_label_or_no_K8s_label_usage(wl, \"\")\n\tpath2 := no_K8s_label_or_no_K8s_label_usage(podSpec, beggining_of_pod_path)\n\tpath = array.concat(path1, path2)\n}\n\n# There is label-usage for WL but not for his Pod\nno_K8s_label_usage(wl, podSpec, beggining_of_pod_path) := path if {\n\tnot no_K8s_label_or_no_K8s_label_usage(wl, \"\")\n\tpath := no_K8s_label_or_no_K8s_label_usage(podSpec, beggining_of_pod_path)\n}\n\n# There is no label-usage for WL but there is for his Pod\nno_K8s_label_usage(wl, podSpec, beggining_of_pod_path) := path if {\n\tnot no_K8s_label_or_no_K8s_label_usage(podSpec, beggining_of_pod_path)\n\tpath := no_K8s_label_or_no_K8s_label_usage(wl, \"\")\n}\n\nno_K8s_label_or_no_K8s_label_usage(wl, start_of_path) := path if {\n\tnot wl.metadata.labels\n\tlabel_key := get_label_key(\"\")\n\tpath = [{\"path\": sprintf(\"%vmetadata.labels[%v]\", [start_of_path, label_key]), \"value\": \"YOUR_VALUE\"}]\n}\n\nno_K8s_label_or_no_K8s_label_usage(wl, start_of_path) := path if {\n\tmetadata := wl.metadata\n\tnot metadata.labels\n\tlabel_key := get_label_key(\"\")\n\tpath = [{\"path\": sprintf(\"%vmetadata.labels[%v]\", [start_of_path, label_key]), \"value\": \"YOUR_VALUE\"}]\n}\n\nno_K8s_label_or_no_K8s_label_usage(wl, start_of_path) := path if {\n\tlabels := wl.metadata.labels\n\tnot all_kubernetes_labels(labels)\n\tlabel_key := get_label_key(\"\")\n\tpath = [{\"path\": sprintf(\"%vmetadata.labels[%v]\", [start_of_path, label_key]), \"value\": \"YOUR_VALUE\"}]\n}\n\nall_kubernetes_labels(labels) if {\n\trecommended_labels := data.postureControlInputs.k8sRecommendedLabels\n\trecommended_label := recommended_labels[_]\n\tlabels[recommended_label]\n}\n\n# get_label_key accepts a parameter so it's not considered a rule\nget_label_key(unused_param) := key if {\n\trecommended_labels := data.postureControlInputs.k8sRecommendedLabels\n\tcount(recommended_labels) > 0\n\tkey := recommended_labels[0]\n} else := \"YOUR_LABEL\"\n"
+                }
+            ]
+        },
+        {
+            "name": "Deprecated Kubernetes image registry",
+            "attributes": {},
+            "description": "Kubernetes team has deprecated GCR (k8s.gcr.io) registry and recommends pulling Kubernetes components from the new registry (registry.k8s.io). This is mandatory from 1.27",
+            "remediation": "Change the images to be pulled from the new registry (registry.k8s.io).",
+            "long_description": "Kubernetes team has deprecated GCR (k8s.gcr.io) registry and recommends pulling Kubernetes components from the new registry (registry.k8s.io). This is mandatory from 1.27",
+            "test": "Checking images in kube-system namespace, if the registry of the image is from the old registry we raise an alert.",
+            "controlID": "C-0253",
+            "baseScore": 5.0,
+            "example": "@controls/examples/c239.yaml",
+            "scanningScope": {
+                "matches": [
+                    "cluster",
+                    "file"
+                ]
+            },
+            "rules": [
+                {
+                    "name": "rule-identify-old-k8s-registry",
+                    "attributes": {
+                        "m$K8sThreatMatrix": "Initial Access::Compromised images in registry"
+                    },
+                    "ruleLanguage": "Rego",
+                    "match": [
+                        {
+                            "apiGroups": [
+                                ""
+                            ],
+                            "apiVersions": [
+                                "v1"
+                            ],
+                            "resources": [
+                                "Pod"
+                            ]
+                        },
+                        {
+                            "apiGroups": [
+                                "apps"
+                            ],
+                            "apiVersions": [
+                                "v1"
+                            ],
+                            "resources": [
+                                "Deployment",
+                                "ReplicaSet",
+                                "DaemonSet",
+                                "StatefulSet"
+                            ]
+                        },
+                        {
+                            "apiGroups": [
+                                "batch"
+                            ],
+                            "apiVersions": [
+                                "*"
+                            ],
+                            "resources": [
+                                "Job",
+                                "CronJob"
+                            ]
+                        }
+                    ],
+                    "ruleDependencies": [],
+                    "description": "Identifying if pod container images are from deprecated K8s registry",
+                    "remediation": "Use images new registry",
+                    "ruleQuery": "",
+                    "rule": "# regal ignore:directory-package-mismatch  \npackage armo_builtins\n\nimport rego.v1\n\ndeprecatedK8sRepo contains msga if {\n\tpod := input[_]\n\tpod.metadata.namespace == \"kube-system\"\n\tk := pod.kind\n\tk == \"Pod\"\n\tcontainer := pod.spec.containers[i]\n\tpath := sprintf(\"spec.containers[%v].image\", [format_int(i, 10)])\n\timage := container.image\n\tdeprecated_registry(image)\n\n\tmsga := {\n\t\t\"alertMessage\": sprintf(\"image '%v' in container '%s' comes from the deprecated k8s.gcr.io\", [image, container.name]),\n\t\t\"packagename\": \"armo_builtins\",\n\t\t\"alertScore\": 2,\n\t\t\"fixPaths\": [],\n\t\t\"reviewPaths\": [path],\n\t\t\"failedPaths\": [path],\n\t\t\"alertObject\": {\"k8sApiObjects\": [pod]},\n\t}\n}\n\ndeprecatedK8sRepo contains msga if {\n\tspec_template_spec_patterns := {\"Deployment\", \"ReplicaSet\", \"DaemonSet\", \"StatefulSet\", \"Job\"}\n\twl := input[_]\n\twl.metadata.namespace == \"kube-system\"\n\tspec_template_spec_patterns[wl.kind]\n\tcontainer := wl.spec.template.spec.containers[i]\n\tpath := sprintf(\"spec.template.spec.containers[%v].image\", [format_int(i, 10)])\n\timage := container.image\n\tdeprecated_registry(image)\n\n\tmsga := {\n\t\t\"alertMessage\": sprintf(\"image '%v' in container '%s' comes from the deprecated k8s.gcr.io\", [image, container.name]),\n\t\t\"packagename\": \"armo_builtins\",\n\t\t\"alertScore\": 2,\n\t\t\"fixPaths\": [],\n\t\t\"reviewPaths\": [path],\n\t\t\"failedPaths\": [path],\n\t\t\"alertObject\": {\"k8sApiObjects\": [wl]},\n\t}\n}\n\ndeprecatedK8sRepo contains msga if {\n\twl := input[_]\n\twl.metadata.namespace == \"kube-system\"\n\twl.kind == \"CronJob\"\n\tcontainer := wl.spec.jobTemplate.spec.template.spec.containers[i]\n\tpath := sprintf(\"spec.jobTemplate.spec.template.spec.containers[%v].image\", [format_int(i, 10)])\n\timage := container.image\n\tdeprecated_registry(image)\n\n\tmsga := {\n\t\t\"alertMessage\": sprintf(\"image '%v' in container '%s' comes from the deprecated k8s.gcr.io\", [image, container.name]),\n\t\t\"packagename\": \"armo_builtins\",\n\t\t\"alertScore\": 2,\n\t\t\"fixPaths\": [],\n\t\t\"reviewPaths\": [path],\n\t\t\"failedPaths\": [path],\n\t\t\"alertObject\": {\"k8sApiObjects\": [wl]},\n\t}\n}\n\ndeprecated_registry(image) if {\n\tstartswith(image, \"k8s.gcr.io/\")\n}\n",
+                    "resourceEnumerator": "# regal ignore:directory-package-mismatch  \npackage armo_builtins\n\nimport rego.v1\n\ndeny contains msg if {\n\t# find aggregated API APIServices\n\tsome obj in input\n\tobj.metadata.namespace == \"kube-system\"\n\tmsg := {\"alertObject\": {\"k8sApiObjects\": [obj]}}\n}\n"
+                }
+            ]
+        },
+        {
+            "name": "Ensure CPU requests are set",
+            "attributes": {
+                "controlTypeTags": [
+                    "compliance",
+                    "devops"
+                ]
+            },
+            "description": "This control identifies all Pods for which the CPU requests are not set.",
+            "remediation": "Set the CPU requests or use exception mechanism to avoid unnecessary notifications.",
+            "controlID": "C-0268",
+            "baseScore": 3.0,
+            "category": {
+                "name": "Workload",
+                "subCategory": {
+                    "name": "Resource management",
+                    "id": "Cat-7"
+                },
+                "id": "Cat-5"
+            },
+            "scanningScope": {
+                "matches": [
+                    "cluster",
+                    "file"
+                ]
+            },
+            "rules": [
+                {
+                    "name": "resources-cpu-requests",
+                    "attributes": {},
+                    "ruleLanguage": "Rego",
+                    "match": [
+                        {
+                            "apiGroups": [
+                                ""
+                            ],
+                            "apiVersions": [
+                                "v1"
+                            ],
+                            "resources": [
+                                "Pod"
+                            ]
+                        },
+                        {
+                            "apiGroups": [
+                                "apps"
+                            ],
+                            "apiVersions": [
+                                "v1"
+                            ],
+                            "resources": [
+                                "Deployment",
+                                "ReplicaSet",
+                                "DaemonSet",
+                                "StatefulSet"
+                            ]
+                        },
+                        {
+                            "apiGroups": [
+                                "batch"
+                            ],
+                            "apiVersions": [
+                                "*"
+                            ],
+                            "resources": [
+                                "Job",
+                                "CronJob"
+                            ]
+                        }
+                    ],
+                    "ruleDependencies": [],
+                    "description": "CPU requests are not set.",
+                    "remediation": "Ensure CPU requests are set.",
+                    "ruleQuery": "armo_builtins",
+                    "rule": "# regal ignore:directory-package-mismatch \npackage armo_builtins\n\nimport rego.v1\n\n# ==================================== no CPU requests =============================================\n# Fails if pod does not have container with CPU request\ndeny contains msga if {\n\tpod := input[_]\n\tpod.kind == \"Pod\"\n\tcontainer := pod.spec.containers[i]\n\tnot container.resources.requests.cpu\n\n\tfixPaths := [{\"path\": sprintf(\"spec.containers[%v].resources.requests.cpu\", [format_int(i, 10)]), \"value\": \"YOUR_VALUE\"}]\n\n\tmsga := {\n\t\t\"alertMessage\": sprintf(\"Container: %v does not have CPU-limit or request\", [container.name]),\n\t\t\"packagename\": \"armo_builtins\",\n\t\t\"alertScore\": 7,\n\t\t\"reviewPaths\": [],\n\t\t\"failedPaths\": [],\n\t\t\"fixPaths\": fixPaths,\n\t\t\"alertObject\": {\"k8sApiObjects\": [pod]},\n\t}\n}\n\n# Fails if workload does not have container with CPU requests\ndeny contains msga if {\n\tspec_template_spec_patterns := {\"Deployment\", \"ReplicaSet\", \"DaemonSet\", \"StatefulSet\", \"Job\"}\n\twl := input[_]\n\tspec_template_spec_patterns[wl.kind]\n\tcontainer := wl.spec.template.spec.containers[i]\n\tnot container.resources.requests.cpu\n\n\tfixPaths := [{\"path\": sprintf(\"spec.template.spec.containers[%v].resources.requests.cpu\", [format_int(i, 10)]), \"value\": \"YOUR_VALUE\"}]\n\n\tmsga := {\n\t\t\"alertMessage\": sprintf(\"Container: %v in %v: %v   does not have CPU-limit or request\", [container.name, wl.kind, wl.metadata.name]),\n\t\t\"packagename\": \"armo_builtins\",\n\t\t\"alertScore\": 7,\n\t\t\"reviewPaths\": [],\n\t\t\"failedPaths\": [],\n\t\t\"fixPaths\": fixPaths,\n\t\t\"alertObject\": {\"k8sApiObjects\": [wl]},\n\t}\n}\n\n# Fails if cronjob does not have container with CPU requests\ndeny contains msga if {\n\twl := input[_]\n\twl.kind == \"CronJob\"\n\tcontainer = wl.spec.jobTemplate.spec.template.spec.containers[i]\n\tnot container.resources.requests.cpu\n\n\tfixPaths := [{\"path\": sprintf(\"spec.jobTemplate.spec.template.spec.containers[%v].resources.requests.cpu\", [format_int(i, 10)]), \"value\": \"YOUR_VALUE\"}]\n\n\tmsga := {\n\t\t\"alertMessage\": sprintf(\"Container: %v in %v: %v   does not have CPU-limit or request\", [container.name, wl.kind, wl.metadata.name]),\n\t\t\"packagename\": \"armo_builtins\",\n\t\t\"alertScore\": 7,\n\t\t\"reviewPaths\": [],\n\t\t\"failedPaths\": [],\n\t\t\"fixPaths\": fixPaths,\n\t\t\"alertObject\": {\"k8sApiObjects\": [wl]},\n\t}\n}\n"
+                }
+            ]
+        },
+        {
+            "name": "Ensure memory requests are set",
+            "attributes": {
+                "controlTypeTags": [
+                    "compliance",
+                    "devops"
+                ]
+            },
+            "description": "This control identifies all Pods for which the memory requests are not set.",
+            "remediation": "Set the memory requests or use exception mechanism to avoid unnecessary notifications.",
+            "controlID": "C-0269",
+            "baseScore": 3.0,
+            "category": {
+                "name": "Workload",
+                "subCategory": {
+                    "name": "Resource management",
+                    "id": "Cat-7"
+                },
+                "id": "Cat-5"
+            },
+            "scanningScope": {
+                "matches": [
+                    "cluster",
+                    "file"
+                ]
+            },
+            "rules": [
+                {
+                    "name": "resources-memory-requests",
+                    "attributes": {},
+                    "ruleLanguage": "Rego",
+                    "match": [
+                        {
+                            "apiGroups": [
+                                ""
+                            ],
+                            "apiVersions": [
+                                "v1"
+                            ],
+                            "resources": [
+                                "Pod"
+                            ]
+                        },
+                        {
+                            "apiGroups": [
+                                "apps"
+                            ],
+                            "apiVersions": [
+                                "v1"
+                            ],
+                            "resources": [
+                                "Deployment",
+                                "ReplicaSet",
+                                "DaemonSet",
+                                "StatefulSet"
+                            ]
+                        },
+                        {
+                            "apiGroups": [
+                                "batch"
+                            ],
+                            "apiVersions": [
+                                "*"
+                            ],
+                            "resources": [
+                                "Job",
+                                "CronJob"
+                            ]
+                        }
+                    ],
+                    "ruleDependencies": [],
+                    "description": "memory requests are not set.",
+                    "remediation": "Ensure memory requests are set.",
+                    "ruleQuery": "armo_builtins",
+                    "rule": "# regal ignore:directory-package-mismatch \npackage armo_builtins\n\nimport rego.v1\n\n#  ================================== no memory requests ==================================\n# Fails if pod does not have container with memory requests\ndeny contains msga if {\n\tpod := input[_]\n\tpod.kind == \"Pod\"\n\tcontainer := pod.spec.containers[i]\n\tnot container.resources.requests.memory\n\tfixPaths := [{\"path\": sprintf(\"spec.containers[%v].resources.requests.memory\", [format_int(i, 10)]), \"value\": \"YOUR_VALUE\"}]\n\n\tmsga := {\n\t\t\"alertMessage\": sprintf(\"Container: %v does not have memory-limit or request\", [container.name]),\n\t\t\"packagename\": \"armo_builtins\",\n\t\t\"alertScore\": 7,\n\t\t\"fixPaths\": fixPaths,\n\t\t\"failedPaths\": [],\n\t\t\"alertObject\": {\"k8sApiObjects\": [pod]},\n\t}\n}\n\n# Fails if workload does not have container with memory requests\ndeny contains msga if {\n\tspec_template_spec_patterns := {\"Deployment\", \"ReplicaSet\", \"DaemonSet\", \"StatefulSet\", \"Job\"}\n\twl := input[_]\n\tspec_template_spec_patterns[wl.kind]\n\tcontainer := wl.spec.template.spec.containers[i]\n\tnot container.resources.requests.memory\n\tfixPaths := [{\"path\": sprintf(\"spec.template.spec.containers[%v].resources.requests.memory\", [format_int(i, 10)]), \"value\": \"YOUR_VALUE\"}]\n\n\tmsga := {\n\t\t\"alertMessage\": sprintf(\"Container: %v in %v: %v   does not have memory-limit or request\", [container.name, wl.kind, wl.metadata.name]),\n\t\t\"packagename\": \"armo_builtins\",\n\t\t\"alertScore\": 7,\n\t\t\"fixPaths\": fixPaths,\n\t\t\"failedPaths\": [],\n\t\t\"alertObject\": {\"k8sApiObjects\": [wl]},\n\t}\n}\n\n# Fails if cronjob does not have container with memory requests\ndeny contains msga if {\n\twl := input[_]\n\twl.kind == \"CronJob\"\n\tcontainer = wl.spec.jobTemplate.spec.template.spec.containers[i]\n\tnot container.resources.requests.memory\n\tfixPaths := [{\"path\": sprintf(\"spec.jobTemplate.spec.template.spec.containers[%v].resources.requests.memory\", [format_int(i, 10)]), \"value\": \"YOUR_VALUE\"}]\n\n\tmsga := {\n\t\t\"alertMessage\": sprintf(\"Container: %v in %v: %v   does not have memory-limit or request\", [container.name, wl.kind, wl.metadata.name]),\n\t\t\"packagename\": \"armo_builtins\",\n\t\t\"alertScore\": 7,\n\t\t\"fixPaths\": fixPaths,\n\t\t\"failedPaths\": [],\n\t\t\"alertObject\": {\"k8sApiObjects\": [wl]},\n\t}\n}\n"
+                }
+            ]
+        },
+        {
+            "name": "Ensure CPU limits are set",
+            "attributes": {
+                "controlTypeTags": [
+                    "compliance",
+                    "devops",
+                    "security"
+                ],
+                "attackTracks": [
+                    {
+                        "attackTrack": "service-destruction",
+                        "categories": [
+                            "Denial of service"
+                        ]
+                    }
+                ]
+            },
+            "description": "This control identifies all Pods for which the CPU limits are not set.",
+            "remediation": "Set the CPU limits or use exception mechanism to avoid unnecessary notifications.",
+            "controlID": "C-0270",
+            "baseScore": 8.0,
+            "category": {
+                "name": "Workload",
+                "subCategory": {
+                    "name": "Resource management",
+                    "id": "Cat-7"
+                },
+                "id": "Cat-5"
+            },
+            "scanningScope": {
+                "matches": [
+                    "cluster",
+                    "file"
+                ]
+            },
+            "rules": [
+                {
+                    "name": "resources-cpu-limits",
+                    "attributes": {},
+                    "ruleLanguage": "Rego",
+                    "match": [
+                        {
+                            "apiGroups": [
+                                ""
+                            ],
+                            "apiVersions": [
+                                "v1"
+                            ],
+                            "resources": [
+                                "Pod"
+                            ]
+                        },
+                        {
+                            "apiGroups": [
+                                "apps"
+                            ],
+                            "apiVersions": [
+                                "v1"
+                            ],
+                            "resources": [
+                                "Deployment",
+                                "ReplicaSet",
+                                "DaemonSet",
+                                "StatefulSet"
+                            ]
+                        },
+                        {
+                            "apiGroups": [
+                                "batch"
+                            ],
+                            "apiVersions": [
+                                "*"
+                            ],
+                            "resources": [
+                                "Job",
+                                "CronJob"
+                            ]
+                        }
+                    ],
+                    "ruleDependencies": [],
+                    "description": "CPU limits are not set.",
+                    "remediation": "Ensure CPU limits are set.",
+                    "ruleQuery": "armo_builtins",
+                    "rule": "# regal ignore:directory-package-mismatch \npackage armo_builtins\n\nimport rego.v1\n\n# ==================================== no CPU limits =============================================\n# Fails if pod does not have container with CPU-limits\ndeny contains msga if {\n\tpod := input[_]\n\tpod.kind == \"Pod\"\n\tcontainer := pod.spec.containers[i]\n\tnot container.resources.limits.cpu\n\n\tfixPaths := [{\"path\": sprintf(\"spec.containers[%v].resources.limits.cpu\", [format_int(i, 10)]), \"value\": \"YOUR_VALUE\"}]\n\n\tmsga := {\n\t\t\"alertMessage\": sprintf(\"Container: %v does not have CPU-limit or request\", [container.name]),\n\t\t\"packagename\": \"armo_builtins\",\n\t\t\"alertScore\": 7,\n\t\t\"reviewPaths\": [],\n\t\t\"failedPaths\": [],\n\t\t\"fixPaths\": fixPaths,\n\t\t\"alertObject\": {\"k8sApiObjects\": [pod]},\n\t}\n}\n\n# Fails if workload does not have container with CPU-limits\ndeny contains msga if {\n\tspec_template_spec_patterns := {\"Deployment\", \"ReplicaSet\", \"DaemonSet\", \"StatefulSet\", \"Job\"}\n\twl := input[_]\n\tspec_template_spec_patterns[wl.kind]\n\tcontainer := wl.spec.template.spec.containers[i]\n\tnot container.resources.limits.cpu\n\n\tfixPaths := [{\"path\": sprintf(\"spec.template.spec.containers[%v].resources.limits.cpu\", [format_int(i, 10)]), \"value\": \"YOUR_VALUE\"}]\n\n\tmsga := {\n\t\t\"alertMessage\": sprintf(\"Container: %v in %v: %v   does not have CPU-limit or request\", [container.name, wl.kind, wl.metadata.name]),\n\t\t\"packagename\": \"armo_builtins\",\n\t\t\"alertScore\": 7,\n\t\t\"reviewPaths\": [],\n\t\t\"failedPaths\": [],\n\t\t\"fixPaths\": fixPaths,\n\t\t\"alertObject\": {\"k8sApiObjects\": [wl]},\n\t}\n}\n\n# Fails if cronjob does not have container with CPU-limits\ndeny contains msga if {\n\twl := input[_]\n\twl.kind == \"CronJob\"\n\tcontainer = wl.spec.jobTemplate.spec.template.spec.containers[i]\n\tnot container.resources.limits.cpu\n\n\tfixPaths := [{\"path\": sprintf(\"spec.jobTemplate.spec.template.spec.containers[%v].resources.limits.cpu\", [format_int(i, 10)]), \"value\": \"YOUR_VALUE\"}]\n\n\tmsga := {\n\t\t\"alertMessage\": sprintf(\"Container: %v in %v: %v   does not have CPU-limit or request\", [container.name, wl.kind, wl.metadata.name]),\n\t\t\"packagename\": \"armo_builtins\",\n\t\t\"alertScore\": 7,\n\t\t\"reviewPaths\": [],\n\t\t\"failedPaths\": [],\n\t\t\"fixPaths\": fixPaths,\n\t\t\"alertObject\": {\"k8sApiObjects\": [wl]},\n\t}\n}\n"
+                }
+            ]
+        },
+        {
+            "name": "Ensure memory limits are set",
+            "attributes": {
+                "controlTypeTags": [
+                    "compliance",
+                    "devops",
+                    "security"
+                ],
+                "attackTracks": [
+                    {
+                        "attackTrack": "service-destruction",
+                        "categories": [
+                            "Denial of service"
+                        ]
+                    }
+                ]
+            },
+            "description": "This control identifies all Pods for which the memory limits are not set.",
+            "remediation": "Set the memory limits or use exception mechanism to avoid unnecessary notifications.",
+            "controlID": "C-0271",
+            "baseScore": 8.0,
+            "category": {
+                "name": "Workload",
+                "subCategory": {
+                    "name": "Resource management",
+                    "id": "Cat-7"
+                },
+                "id": "Cat-5"
+            },
+            "scanningScope": {
+                "matches": [
+                    "cluster",
+                    "file"
+                ]
+            },
+            "rules": [
+                {
+                    "name": "resources-memory-limits",
+                    "attributes": {},
+                    "ruleLanguage": "Rego",
+                    "match": [
+                        {
+                            "apiGroups": [
+                                ""
+                            ],
+                            "apiVersions": [
+                                "v1"
+                            ],
+                            "resources": [
+                                "Pod"
+                            ]
+                        },
+                        {
+                            "apiGroups": [
+                                "apps"
+                            ],
+                            "apiVersions": [
+                                "v1"
+                            ],
+                            "resources": [
+                                "Deployment",
+                                "ReplicaSet",
+                                "DaemonSet",
+                                "StatefulSet"
+                            ]
+                        },
+                        {
+                            "apiGroups": [
+                                "batch"
+                            ],
+                            "apiVersions": [
+                                "*"
+                            ],
+                            "resources": [
+                                "Job",
+                                "CronJob"
+                            ]
+                        }
+                    ],
+                    "ruleDependencies": [],
+                    "description": "memory limits are not set.",
+                    "remediation": "Ensure memory limits are set.",
+                    "ruleQuery": "armo_builtins",
+                    "rule": "# regal ignore:directory-package-mismatch \npackage armo_builtins\n\nimport rego.v1\n\n#  ================================== no memory limits ==================================\n# Fails if pod does not have container with memory-limits\ndeny contains msga if {\n\tpod := input[_]\n\tpod.kind == \"Pod\"\n\tcontainer := pod.spec.containers[i]\n\tnot container.resources.limits.memory\n\tfixPaths := [{\"path\": sprintf(\"spec.containers[%v].resources.limits.memory\", [format_int(i, 10)]), \"value\": \"YOUR_VALUE\"}]\n\n\tmsga := {\n\t\t\"alertMessage\": sprintf(\"Container: %v does not have memory-limit or request\", [container.name]),\n\t\t\"packagename\": \"armo_builtins\",\n\t\t\"alertScore\": 7,\n\t\t\"fixPaths\": fixPaths,\n\t\t\"failedPaths\": [],\n\t\t\"alertObject\": {\"k8sApiObjects\": [pod]},\n\t}\n}\n\n# Fails if workload does not have container with memory-limits\ndeny contains msga if {\n\tspec_template_spec_patterns := {\"Deployment\", \"ReplicaSet\", \"DaemonSet\", \"StatefulSet\", \"Job\"}\n\twl := input[_]\n\tspec_template_spec_patterns[wl.kind]\n\tcontainer := wl.spec.template.spec.containers[i]\n\tnot container.resources.limits.memory\n\tfixPaths := [{\"path\": sprintf(\"spec.template.spec.containers[%v].resources.limits.memory\", [format_int(i, 10)]), \"value\": \"YOUR_VALUE\"}]\n\n\tmsga := {\n\t\t\"alertMessage\": sprintf(\"Container: %v in %v: %v   does not have memory-limit or request\", [container.name, wl.kind, wl.metadata.name]),\n\t\t\"packagename\": \"armo_builtins\",\n\t\t\"alertScore\": 7,\n\t\t\"fixPaths\": fixPaths,\n\t\t\"failedPaths\": [],\n\t\t\"alertObject\": {\"k8sApiObjects\": [wl]},\n\t}\n}\n\n# Fails if cronjob does not have container with memory-limits\ndeny contains msga if {\n\twl := input[_]\n\twl.kind == \"CronJob\"\n\tcontainer = wl.spec.jobTemplate.spec.template.spec.containers[i]\n\tnot container.resources.limits.memory\n\tfixPaths := [{\"path\": sprintf(\"spec.jobTemplate.spec.template.spec.containers[%v].resources.limits.memory\", [format_int(i, 10)]), \"value\": \"YOUR_VALUE\"}]\n\n\tmsga := {\n\t\t\"alertMessage\": sprintf(\"Container: %v in %v: %v   does not have memory-limit or request\", [container.name, wl.kind, wl.metadata.name]),\n\t\t\"packagename\": \"armo_builtins\",\n\t\t\"alertScore\": 7,\n\t\t\"fixPaths\": fixPaths,\n\t\t\"failedPaths\": [],\n\t\t\"alertObject\": {\"k8sApiObjects\": [wl]},\n\t}\n}\n"
+                }
+            ]
+        },
+        {
+            "name": "Nginx Ingress Controller End of Life",
+            "attributes": {
+                "controlTypeTags": [
+                    "security",
+                    "compliance",
+                    "devops"
+                ]
+            },
+            "description": "The nginx ingress controller project reaches End of Life (EOL) in March 2026. After this date, no security patches or functional updates will be provided. This control identifies workloads using nginx ingress controllers to help users plan migration to supported alternatives.",
+            "remediation": "Migrate to a supported ingress controller solution: 1) F5 NGINX Ingress Controller (https://docs.nginx.com/nginx-ingress-controller/) for a supported NGINX-based option, 2) Kubernetes Gateway API for a cloud-native approach, 3) HAProxy Ingress, 4) Traefik, 5) Cloud-native solutions (AWS ALB Ingress Controller, GKE Ingress, Azure Application Gateway Ingress Controller). Plan your migration before the EOL date to ensure continued security and support.",
+            "long_description": "The nginx ingress controller is a widely-used component for managing external access to services in Kubernetes clusters. However, the project has announced its End of Life (EOL) in March 2026. After this date, the project will no longer receive security patches, bug fixes, or feature updates, potentially exposing clusters to security vulnerabilities and operational risks. This control scans Deployments, DaemonSets, and StatefulSets to identify any workloads running nginx ingress controllers. Organizations should proactively plan migration to supported alternatives to maintain security posture and operational stability.",
+            "test": "Check if any Deployment, DaemonSet, or StatefulSet is using nginx ingress controller images (including patterns like nginx-ingress-controller, ingress-nginx/controller, k8s.gcr.io/ingress-nginx, registry.k8s.io/ingress-nginx)",
+            "controlID": "C-0292",
+            "baseScore": 6.0,
+            "category": {
+                "name": "Workload",
+                "subCategory": {
+                    "name": "Resource management",
+                    "id": "Cat-7"
+                },
+                "id": "Cat-5"
+            },
+            "scanningScope": {
+                "matches": [
+                    "cluster",
+                    "file"
+                ]
+            },
+            "rules": [
+                {
+                    "name": "detect-nginx-ingress-controller-eol",
+                    "attributes": {
+                        "hostSensorRule": false,
+                        "imageScanRelated": false
+                    },
+                    "ruleLanguage": "Rego",
+                    "match": [
+                        {
+                            "apiGroups": [
+                                "apps"
+                            ],
+                            "apiVersions": [
+                                "v1"
+                            ],
+                            "resources": [
+                                "Deployment",
+                                "DaemonSet",
+                                "StatefulSet"
+                            ]
+                        }
+                    ],
+                    "description": "Detects nginx ingress controller in Deployments, DaemonSets, and StatefulSets that will reach End of Life in March 2026",
+                    "remediation": "Migrate to a supported ingress controller such as ingress-nginx (community fork), HAProxy Ingress, Traefik, or cloud-native solutions (AWS ALB, GKE Ingress, Azure Application Gateway)",
+                    "ruleQuery": "armo_builtins",
+                    "rule": "# regal ignore:directory-package-mismatch\npackage armo_builtins\n\nimport rego.v1\n\n# Detect nginx ingress controller in Deployments\ndeny contains msga if {\n\tworkload := input[_]\n\tworkload.kind == \"Deployment\"\n\tcontainer := workload.spec.template.spec.containers[i]\n\tis_nginx_ingress_image(container.image)\n\n\tpath := sprintf(\"spec.template.spec.containers[%v].image\", [format_int(i, 10)])\n\tmsga := {\n\t\t\"alertMessage\": sprintf(\"Deployment '%v' uses nginx ingress controller which reaches End of Life in March 2026. No security or functional fixes will be available after this date.\", [workload.metadata.name]),\n\t\t\"packagename\": \"armo_builtins\",\n\t\t\"alertScore\": 6,\n\t\t\"reviewPaths\": [path],\n\t\t\"failedPaths\": [path],\n\t\t\"fixPaths\": [],\n\t\t\"fixCommand\": \"\",\n\t\t\"alertObject\": {\"k8sApiObjects\": [workload]},\n\t}\n}\n\n# Detect nginx ingress controller in DaemonSets\ndeny contains msga if {\n\tworkload := input[_]\n\tworkload.kind == \"DaemonSet\"\n\tcontainer := workload.spec.template.spec.containers[i]\n\tis_nginx_ingress_image(container.image)\n\n\tpath := sprintf(\"spec.template.spec.containers[%v].image\", [format_int(i, 10)])\n\tmsga := {\n\t\t\"alertMessage\": sprintf(\"DaemonSet '%v' uses nginx ingress controller which reaches End of Life in March 2026. No security or functional fixes will be available after this date.\", [workload.metadata.name]),\n\t\t\"packagename\": \"armo_builtins\",\n\t\t\"alertScore\": 6,\n\t\t\"reviewPaths\": [path],\n\t\t\"failedPaths\": [path],\n\t\t\"fixPaths\": [],\n\t\t\"fixCommand\": \"\",\n\t\t\"alertObject\": {\"k8sApiObjects\": [workload]},\n\t}\n}\n\n# Detect nginx ingress controller in StatefulSets\ndeny contains msga if {\n\tworkload := input[_]\n\tworkload.kind == \"StatefulSet\"\n\tcontainer := workload.spec.template.spec.containers[i]\n\tis_nginx_ingress_image(container.image)\n\n\tpath := sprintf(\"spec.template.spec.containers[%v].image\", [format_int(i, 10)])\n\tmsga := {\n\t\t\"alertMessage\": sprintf(\"StatefulSet '%v' uses nginx ingress controller which reaches End of Life in March 2026. No security or functional fixes will be available after this date.\", [workload.metadata.name]),\n\t\t\"packagename\": \"armo_builtins\",\n\t\t\"alertScore\": 6,\n\t\t\"reviewPaths\": [path],\n\t\t\"failedPaths\": [path],\n\t\t\"fixPaths\": [],\n\t\t\"fixCommand\": \"\",\n\t\t\"alertObject\": {\"k8sApiObjects\": [workload]},\n\t}\n}\n\n# Helper function: Check if image is community ingress-nginx controller\n# Only matches the community ingress-nginx project that reaches EOL in March 2026\n# Does not match NGINX Inc commercial products which have different support lifecycles\nis_nginx_ingress_image(image) if {\n\tcontains(image, \"ingress-nginx/controller\")\n}\n\nis_nginx_ingress_image(image) if {\n\t# Match the official k8s community ingress-nginx images\n\tcontains(image, \"k8s.gcr.io/ingress-nginx\")\n}\n\nis_nginx_ingress_image(image) if {\n\t# Match the new official registry for community ingress-nginx\n\tcontains(image, \"registry.k8s.io/ingress-nginx\")\n}\n",
+                    "resourceEnumerator": "# regal ignore:directory-package-mismatch\npackage armo_builtins\n\nimport rego.v1\n\n# Filter returns only the workload resources that could potentially fail this rule\n# This is used by Kubescape to calculate the risk score accurately\n# We only check Deployments, DaemonSets, and StatefulSets\ndeny contains msga if {\n\tworkload := input[_]\n\tworkload.kind == \"Deployment\"\n\tmsga := {\n\t\t\"alertMessage\": \"\",\n\t\t\"alertObject\": {\"k8sApiObjects\": [workload]},\n\t}\n}\n\ndeny contains msga if {\n\tworkload := input[_]\n\tworkload.kind == \"DaemonSet\"\n\tmsga := {\n\t\t\"alertMessage\": \"\",\n\t\t\"alertObject\": {\"k8sApiObjects\": [workload]},\n\t}\n}\n\ndeny contains msga if {\n\tworkload := input[_]\n\tworkload.kind == \"StatefulSet\"\n\tmsga := {\n\t\t\"alertMessage\": \"\",\n\t\t\"alertObject\": {\"k8sApiObjects\": [workload]},\n\t}\n}\n"
+                }
+            ]
+        },
+        {
+            "name": "Service with no workload",
+            "attributes": {
+                "controlTypeTags": [
+                    "devops"
+                ]
+            },
+            "description": "A Service whose selector does not match any workload pod is dangling. It typically results from a workload being renamed or deleted, or from a typo in the selector or pod labels. Dangling Services consume cluster names and can cause silent routing failures.",
+            "remediation": "Verify the Service selector matches the labels of an existing workload in the same namespace, or remove the Service if it is no longer needed.",
+            "test": "Check that every Service with a selector has at least one workload in the same namespace whose pod template labels are a superset of the selector.",
+            "controlID": "C-0293",
+            "baseScore": 3.0,
+            "category": {
+                "name": "Workload",
+                "id": "Cat-5"
+            },
+            "scanningScope": {
+                "matches": [
+                    "cluster",
+                    "file"
+                ]
+            },
+            "rules": [
+                {
+                    "name": "service-with-no-workload",
+                    "attributes": {},
+                    "ruleLanguage": "Rego",
+                    "match": [
+                        {
+                            "apiGroups": [
+                                ""
+                            ],
+                            "apiVersions": [
+                                "v1"
+                            ],
+                            "resources": [
+                                "Service",
+                                "Pod",
+                                "ReplicationController"
+                            ]
+                        },
+                        {
+                            "apiGroups": [
+                                "apps"
+                            ],
+                            "apiVersions": [
+                                "v1"
+                            ],
+                            "resources": [
+                                "Deployment",
+                                "ReplicaSet",
+                                "DaemonSet",
+                                "StatefulSet"
+                            ]
+                        },
+                        {
+                            "apiGroups": [
+                                "batch"
+                            ],
+                            "apiVersions": [
+                                "*"
+                            ],
+                            "resources": [
+                                "Job",
+                                "CronJob"
+                            ]
+                        }
+                    ],
+                    "ruleDependencies": [],
+                    "description": "fails if a Service has a selector that does not match any workload in the same namespace",
+                    "remediation": "Verify the Service selector matches the labels of an existing workload in the same namespace, or remove the Service if it is no longer needed.",
+                    "ruleQuery": "armo_builtins",
+                    "rule": "# regal ignore:directory-package-mismatch  \npackage armo_builtins\n\nimport rego.v1\n\ndeny contains msga if {\n\tservice := input[_]\n\tservice.kind == \"Service\"\n\tservice_type := object.get(service.spec, \"type\", \"ClusterIP\")\n\tservice_type != \"ExternalName\"\n\n\tselector := object.get(service.spec, \"selector\", {})\n\tcount(selector) > 0\n\n\tnot has_matching_workload(service, input)\n\n\tmsga := {\n\t\t\"alertMessage\": sprintf(\"Service '%v' selector matches no workloads in namespace '%v'\", [service.metadata.name, service_namespace(service)]),\n\t\t\"packagename\": \"armo_builtins\",\n\t\t\"failedPaths\": [\"spec.selector\"],\n\t\t\"fixPaths\": [],\n\t\t\"alertScore\": 3,\n\t\t\"alertObject\": {\"k8sApiObjects\": [service]},\n\t}\n}\n\nhas_matching_workload(service, workloads) if {\n\twl := workloads[_]\n\tis_workload(wl)\n\tsame_namespace(service, wl)\n\tlabels_match(service.spec.selector, pod_template_labels(wl))\n}\n\nis_workload(wl) if {\n\tworkload_kinds := {\"Pod\", \"Deployment\", \"ReplicaSet\", \"DaemonSet\", \"StatefulSet\", \"Job\", \"CronJob\", \"ReplicationController\"}\n\tworkload_kinds[wl.kind]\n}\n\npod_template_labels(wl) := labels if {\n\twl.kind == \"Pod\"\n\tlabels := object.get(wl.metadata, \"labels\", {})\n}\n\npod_template_labels(wl) := labels if {\n\tcontroller_kinds := {\"Deployment\", \"ReplicaSet\", \"DaemonSet\", \"StatefulSet\", \"Job\", \"ReplicationController\"}\n\tcontroller_kinds[wl.kind]\n\tlabels := object.get(wl.spec.template.metadata, \"labels\", {})\n}\n\npod_template_labels(wl) := labels if {\n\twl.kind == \"CronJob\"\n\tlabels := object.get(wl.spec.jobTemplate.spec.template.metadata, \"labels\", {})\n}\n\nlabels_match(selector, labels) if {\n\tcount(selector) > 0\n\tnot selector_mismatch(selector, labels)\n}\n\nselector_mismatch(selector, labels) if {\n\tselector[k]\n\tnot labels[k] == selector[k]\n}\n\nsame_namespace(a, b) if {\n\tservice_namespace(a) == workload_namespace(b)\n}\n\nservice_namespace(svc) := object.get(svc.metadata, \"namespace\", \"default\")\n\nworkload_namespace(wl) := object.get(wl.metadata, \"namespace\", \"default\")\n"
+                }
+            ]
+        },
+        {
+            "name": "Deprecated serviceAccount field",
+            "attributes": {
+                "controlTypeTags": [
+                    "devops"
+                ]
+            },
+            "description": "The deprecated `serviceAccount` workload field should not be used. Use `serviceAccountName` instead.",
+            "remediation": "Replace the deprecated `serviceAccount` field with `serviceAccountName` using the same service account value.",
+            "test": "Check that Pods, workload pod templates, and CronJob pod templates do not use the deprecated serviceAccount field.",
+            "controlID": "C-0294",
+            "baseScore": 3.0,
+            "category": {
+                "name": "Workload",
+                "id": "Cat-5"
+            },
+            "scanningScope": {
+                "matches": [
+                    "cluster",
+                    "file"
+                ]
+            },
+            "rules": [
+                {
+                    "name": "deprecated-service-account-field",
+                    "attributes": {},
+                    "ruleLanguage": "Rego",
+                    "match": [
+                        {
+                            "apiGroups": [
+                                ""
+                            ],
+                            "apiVersions": [
+                                "v1"
+                            ],
+                            "resources": [
+                                "Pod",
+                                "ReplicationController"
+                            ]
+                        },
+                        {
+                            "apiGroups": [
+                                "apps"
+                            ],
+                            "apiVersions": [
+                                "v1"
+                            ],
+                            "resources": [
+                                "Deployment",
+                                "ReplicaSet",
+                                "DaemonSet",
+                                "StatefulSet"
+                            ]
+                        },
+                        {
+                            "apiGroups": [
+                                "batch"
+                            ],
+                            "apiVersions": [
+                                "*"
+                            ],
+                            "resources": [
+                                "Job",
+                                "CronJob"
+                            ]
+                        }
+                    ],
+                    "ruleDependencies": [],
+                    "description": "Fails if a workload uses the deprecated serviceAccount field instead of serviceAccountName.",
+                    "remediation": "Replace serviceAccount with serviceAccountName using the same service account value.",
+                    "ruleQuery": "armo_builtins",
+                    "rule": "# regal ignore:directory-package-mismatch\npackage armo_builtins\n\nimport rego.v1\n\ndeprecated_service_account_msg(obj, deprecated_path, replacement_path, value) := {\n\t\"alertMessage\": sprintf(\"%v: %v uses deprecated field '%v'; use '%v' instead\", [obj.kind, obj.metadata.name, deprecated_path, replacement_path]),\n\t\"packagename\": \"armo_builtins\",\n\t\"failedPaths\": [deprecated_path],\n\t\"deletePaths\": [deprecated_path],\n\t\"fixPaths\": [{\"path\": replacement_path, \"value\": value}],\n\t\"alertScore\": 3,\n\t\"alertObject\": {\"k8sApiObjects\": [obj]},\n}\n\ndeprecated_service_account_mismatch_msg(obj, deprecated_path, value, replacement_path, replacement_value) := {\n\t\"alertMessage\": sprintf(\"%v: %v has deprecated field '%v' (%v) and '%v' (%v) with non-matching values; remove '%v' or make the values match\", [obj.kind, obj.metadata.name, deprecated_path, value, replacement_path, replacement_value, deprecated_path]),\n\t\"packagename\": \"armo_builtins\",\n\t\"failedPaths\": [deprecated_path],\n\t\"deletePaths\": [deprecated_path],\n\t\"fixPaths\": [],\n\t\"alertScore\": 3,\n\t\"alertObject\": {\"k8sApiObjects\": [obj]},\n}\n\nis_workload_kind(kind) if {\n\t{\"Deployment\", \"ReplicaSet\", \"DaemonSet\", \"StatefulSet\", \"Job\", \"ReplicationController\"}[kind]\n}\n\ndeny contains msga if {\n\tpod := input[_]\n\tpod.kind == \"Pod\"\n\tvalue := pod.spec.serviceAccount\n\treplacement_value := object.get(pod.spec, \"serviceAccountName\", \"\")\n\tvalue != replacement_value\n\treplacement_value == \"\"\n\n\tmsga := deprecated_service_account_msg(pod, \"spec.serviceAccount\", \"spec.serviceAccountName\", value)\n}\n\ndeny contains msga if {\n\tpod := input[_]\n\tpod.kind == \"Pod\"\n\tvalue := pod.spec.serviceAccount\n\treplacement_value := pod.spec.serviceAccountName\n\tvalue != replacement_value\n\n\tmsga := deprecated_service_account_mismatch_msg(pod, \"spec.serviceAccount\", value, \"spec.serviceAccountName\", replacement_value)\n}\n\ndeny contains msga if {\n\twl := input[_]\n\tis_workload_kind(wl.kind)\n\tvalue := wl.spec.template.spec.serviceAccount\n\treplacement_value := object.get(wl.spec.template.spec, \"serviceAccountName\", \"\")\n\tvalue != replacement_value\n\treplacement_value == \"\"\n\n\tmsga := deprecated_service_account_msg(wl, \"spec.template.spec.serviceAccount\", \"spec.template.spec.serviceAccountName\", value)\n}\n\ndeny contains msga if {\n\twl := input[_]\n\tis_workload_kind(wl.kind)\n\tvalue := wl.spec.template.spec.serviceAccount\n\treplacement_value := wl.spec.template.spec.serviceAccountName\n\tvalue != replacement_value\n\n\tmsga := deprecated_service_account_mismatch_msg(wl, \"spec.template.spec.serviceAccount\", value, \"spec.template.spec.serviceAccountName\", replacement_value)\n}\n\ndeny contains msga if {\n\tcronjob := input[_]\n\tcronjob.kind == \"CronJob\"\n\tvalue := cronjob.spec.jobTemplate.spec.template.spec.serviceAccount\n\treplacement_value := object.get(cronjob.spec.jobTemplate.spec.template.spec, \"serviceAccountName\", \"\")\n\tvalue != replacement_value\n\treplacement_value == \"\"\n\n\tmsga := deprecated_service_account_msg(cronjob, \"spec.jobTemplate.spec.template.spec.serviceAccount\", \"spec.jobTemplate.spec.template.spec.serviceAccountName\", value)\n}\n\ndeny contains msga if {\n\tcronjob := input[_]\n\tcronjob.kind == \"CronJob\"\n\tvalue := cronjob.spec.jobTemplate.spec.template.spec.serviceAccount\n\treplacement_value := cronjob.spec.jobTemplate.spec.template.spec.serviceAccountName\n\tvalue != replacement_value\n\n\tmsga := deprecated_service_account_mismatch_msg(cronjob, \"spec.jobTemplate.spec.template.spec.serviceAccount\", value, \"spec.jobTemplate.spec.template.spec.serviceAccountName\", replacement_value)\n}\n"
+                }
+            ]
+        },
+        {
+            "name": "Duplicate environment variable",
+            "attributes": {
+                "controlTypeTags": [
+                    "devops"
+                ]
+            },
+            "description": "A container with duplicate environment variable names can behave unexpectedly because later values override earlier values. Duplicate entries usually indicate configuration drift or copy-paste mistakes.",
+            "remediation": "Remove or rename duplicate environment variable entries so each container defines each environment variable name only once.",
+            "test": "Check every container in Pods, pod-template workloads, and CronJobs for repeated env[].name values within the same container.",
+            "controlID": "C-0295",
+            "baseScore": 3.0,
+            "category": {
+                "name": "Workload",
+                "id": "Cat-5"
+            },
+            "scanningScope": {
+                "matches": [
+                    "cluster",
+                    "file"
+                ]
+            },
+            "rules": [
+                {
+                    "name": "duplicate-env-var",
+                    "attributes": {},
+                    "ruleLanguage": "Rego",
+                    "match": [
+                        {
+                            "apiGroups": [
+                                ""
+                            ],
+                            "apiVersions": [
+                                "v1"
+                            ],
+                            "resources": [
+                                "Pod",
+                                "ReplicationController"
+                            ]
+                        },
+                        {
+                            "apiGroups": [
+                                "apps"
+                            ],
+                            "apiVersions": [
+                                "v1"
+                            ],
+                            "resources": [
+                                "Deployment",
+                                "ReplicaSet",
+                                "DaemonSet",
+                                "StatefulSet"
+                            ]
+                        },
+                        {
+                            "apiGroups": [
+                                "batch"
+                            ],
+                            "apiVersions": [
+                                "*"
+                            ],
+                            "resources": [
+                                "Job",
+                                "CronJob"
+                            ]
+                        }
+                    ],
+                    "ruleDependencies": [],
+                    "description": "fails if a container defines the same environment variable name more than once",
+                    "remediation": "Remove or rename duplicate environment variable entries so each container defines each environment variable name only once.",
+                    "ruleQuery": "armo_builtins",
+                    "rule": "# regal ignore:directory-package-mismatch\npackage armo_builtins\n\nimport rego.v1\n\nsame_name_at_other_index(envs, j, name) if {\n\tk != j\n\tenvs[k].name == name\n}\n\ndeny contains msga if {\n\tpod := input[_]\n\tpod.kind == \"Pod\"\n\tcontainer := pod.spec.containers[i]\n\tenv := container.env[j]\n\tsame_name_at_other_index(container.env, j, env.name)\n\n\tpath := sprintf(\"spec.containers[%v].env[%v].name\", [i, j])\n\n\tmsga := make_alert(pod, \"Pod\", pod.metadata.name, container, env.name, path)\n}\n\ndeny contains msga if {\n\tpod := input[_]\n\tpod.kind == \"Pod\"\n\tcontainer := pod.spec.initContainers[i]\n\tenv := container.env[j]\n\tsame_name_at_other_index(container.env, j, env.name)\n\n\tpath := sprintf(\"spec.initContainers[%v].env[%v].name\", [i, j])\n\n\tmsga := make_alert(pod, \"Pod\", pod.metadata.name, container, env.name, path)\n}\n\ndeny contains msga if {\n\tpod := input[_]\n\tpod.kind == \"Pod\"\n\tcontainer := pod.spec.ephemeralContainers[i]\n\tenv := container.env[j]\n\tsame_name_at_other_index(container.env, j, env.name)\n\n\tpath := sprintf(\"spec.ephemeralContainers[%v].env[%v].name\", [i, j])\n\n\tmsga := make_alert(pod, \"Pod\", pod.metadata.name, container, env.name, path)\n}\n\ndeny contains msga if {\n\twl := input[_]\n\twl.kind in {\"Deployment\", \"ReplicaSet\", \"DaemonSet\", \"StatefulSet\", \"Job\", \"ReplicationController\"}\n\tcontainer := wl.spec.template.spec.containers[i]\n\tenv := container.env[j]\n\tsame_name_at_other_index(container.env, j, env.name)\n\n\tpath := sprintf(\"spec.template.spec.containers[%v].env[%v].name\", [i, j])\n\n\tmsga := make_alert(wl, wl.kind, wl.metadata.name, container, env.name, path)\n}\n\ndeny contains msga if {\n\twl := input[_]\n\twl.kind in {\"Deployment\", \"ReplicaSet\", \"DaemonSet\", \"StatefulSet\", \"Job\", \"ReplicationController\"}\n\tcontainer := wl.spec.template.spec.initContainers[i]\n\tenv := container.env[j]\n\tsame_name_at_other_index(container.env, j, env.name)\n\n\tpath := sprintf(\"spec.template.spec.initContainers[%v].env[%v].name\", [i, j])\n\n\tmsga := make_alert(wl, wl.kind, wl.metadata.name, container, env.name, path)\n}\n\ndeny contains msga if {\n\twl := input[_]\n\twl.kind in {\"Deployment\", \"ReplicaSet\", \"DaemonSet\", \"StatefulSet\", \"Job\", \"ReplicationController\"}\n\tcontainer := wl.spec.template.spec.ephemeralContainers[i]\n\tenv := container.env[j]\n\tsame_name_at_other_index(container.env, j, env.name)\n\n\tpath := sprintf(\"spec.template.spec.ephemeralContainers[%v].env[%v].name\", [i, j])\n\n\tmsga := make_alert(wl, wl.kind, wl.metadata.name, container, env.name, path)\n}\n\ndeny contains msga if {\n\twl := input[_]\n\twl.kind == \"CronJob\"\n\tcontainer := wl.spec.jobTemplate.spec.template.spec.containers[i]\n\tenv := container.env[j]\n\tsame_name_at_other_index(container.env, j, env.name)\n\n\tpath := sprintf(\"spec.jobTemplate.spec.template.spec.containers[%v].env[%v].name\", [i, j])\n\n\tmsga := make_alert(wl, \"CronJob\", wl.metadata.name, container, env.name, path)\n}\n\ndeny contains msga if {\n\twl := input[_]\n\twl.kind == \"CronJob\"\n\tcontainer := wl.spec.jobTemplate.spec.template.spec.initContainers[i]\n\tenv := container.env[j]\n\tsame_name_at_other_index(container.env, j, env.name)\n\n\tpath := sprintf(\"spec.jobTemplate.spec.template.spec.initContainers[%v].env[%v].name\", [i, j])\n\n\tmsga := make_alert(wl, \"CronJob\", wl.metadata.name, container, env.name, path)\n}\n\ndeny contains msga if {\n\twl := input[_]\n\twl.kind == \"CronJob\"\n\tcontainer := wl.spec.jobTemplate.spec.template.spec.ephemeralContainers[i]\n\tenv := container.env[j]\n\tsame_name_at_other_index(container.env, j, env.name)\n\n\tpath := sprintf(\"spec.jobTemplate.spec.template.spec.ephemeralContainers[%v].env[%v].name\", [i, j])\n\n\tmsga := make_alert(wl, \"CronJob\", wl.metadata.name, container, env.name, path)\n}\n\nmake_alert(obj, kind, name, container, env_name, path) := {\n\t\"alertMessage\": sprintf(\"%v: %v container %v has duplicate environment variable name %v at this entry\", [kind, name, container.name, env_name]),\n\t\"packagename\": \"armo_builtins\",\n\t\"failedPaths\": [path],\n\t\"fixPaths\": [],\n\t\"alertScore\": 3,\n\t\"alertObject\": {\"k8sApiObjects\": [obj]},\n}\n"
+                }
+            ]
+        },
+        {
+            "name": "Mismatching selector",
+            "attributes": {
+                "controlTypeTags": [
+                    "devops"
+                ]
+            },
+            "description": "A workload selector that does not match its pod template labels can prevent the controller from managing the intended pods. This usually results from label drift or copy-paste mistakes.",
+            "remediation": "Update spec.selector, spec.jobTemplate.spec.selector, or the pod template labels so the selector matches the pod template labels.",
+            "test": "Check that every Deployment, ReplicaSet, DaemonSet, StatefulSet, ReplicationController, Job, and CronJob selector matches the workload pod template labels.",
+            "controlID": "C-0296",
+            "baseScore": 3.0,
+            "category": {
+                "name": "Workload",
+                "id": "Cat-5"
+            },
+            "scanningScope": {
+                "matches": [
+                    "cluster",
+                    "file"
+                ]
+            },
+            "rules": [
+                {
+                    "name": "mismatching-selector",
+                    "attributes": {},
+                    "ruleLanguage": "Rego",
+                    "match": [
+                        {
+                            "apiGroups": [
+                                "apps"
+                            ],
+                            "apiVersions": [
+                                "v1"
+                            ],
+                            "resources": [
+                                "Deployment",
+                                "ReplicaSet",
+                                "DaemonSet",
+                                "StatefulSet"
+                            ]
+                        },
+                        {
+                            "apiGroups": [
+                                ""
+                            ],
+                            "apiVersions": [
+                                "v1"
+                            ],
+                            "resources": [
+                                "ReplicationController"
+                            ]
+                        },
+                        {
+                            "apiGroups": [
+                                "batch"
+                            ],
+                            "apiVersions": [
+                                "v1"
+                            ],
+                            "resources": [
+                                "Job",
+                                "CronJob"
+                            ]
+                        }
+                    ],
+                    "ruleDependencies": [],
+                    "description": "fails if a workload selector does not match the pod template labels",
+                    "remediation": "Update spec.selector, spec.jobTemplate.spec.selector, or the pod template labels so the selector matches the pod template labels.",
+                    "ruleQuery": "armo_builtins",
+                    "rule": "# regal ignore:directory-package-mismatch\npackage armo_builtins\n\nimport rego.v1\n\ndeny contains msga if {\n\twl := input[_]\n\tselector := workload_selector(wl)\n\tselector_defined(selector)\n\tlabels := workload_template_labels(wl)\n\tnot selector_matches(selector, labels)\n\tfailed_path := selector_failed_path(selector, labels, selector_match_labels_path(wl), selector_match_expressions_path(wl))\n\n\tmsga := {\n\t\t\"alertMessage\": sprintf(\"%v: %v selector does not match pod template labels\", [wl.kind, wl.metadata.name]),\n\t\t\"packagename\": \"armo_builtins\",\n\t\t\"failedPaths\": [failed_path],\n\t\t\"fixPaths\": [],\n\t\t\"alertScore\": 3,\n\t\t\"alertObject\": {\"k8sApiObjects\": [wl]},\n\t}\n}\n\nworkload_selector(wl) := selector if {\n\twl.kind in {\"Deployment\", \"ReplicaSet\", \"DaemonSet\", \"StatefulSet\", \"Job\"}\n\tselector := object.get(wl.spec, \"selector\", {})\n}\n\nworkload_selector(wl) := selector if {\n\twl.kind == \"ReplicationController\"\n\tselector := {\"matchLabels\": object.get(wl.spec, \"selector\", {})}\n}\n\nworkload_selector(wl) := selector if {\n\twl.kind == \"CronJob\"\n\tselector := object.get(cronjob_spec(wl), \"selector\", {})\n}\n\nworkload_template_labels(wl) := labels if {\n\twl.kind in {\"Deployment\", \"ReplicaSet\", \"DaemonSet\", \"StatefulSet\", \"Job\", \"ReplicationController\"}\n\tlabels := object.get(workload_template_metadata(wl), \"labels\", {})\n}\n\nworkload_template_labels(wl) := labels if {\n\twl.kind == \"CronJob\"\n\tlabels := object.get(cronjob_template_metadata(wl), \"labels\", {})\n}\n\nworkload_template_metadata(wl) := metadata if {\n\tspec := object.get(wl, \"spec\", {})\n\ttemplate := object.get(spec, \"template\", {})\n\tmetadata := object.get(template, \"metadata\", {})\n}\n\ncronjob_spec(wl) := spec if {\n\twl_spec := object.get(wl, \"spec\", {})\n\tjob_template := object.get(wl_spec, \"jobTemplate\", {})\n\tspec := object.get(job_template, \"spec\", {})\n}\n\ncronjob_template_metadata(wl) := metadata if {\n\tspec := cronjob_spec(wl)\n\ttemplate := object.get(spec, \"template\", {})\n\tmetadata := object.get(template, \"metadata\", {})\n}\n\nselector_match_labels_path(wl) := \"spec.selector.matchLabels\" if {\n\twl.kind in {\"Deployment\", \"ReplicaSet\", \"DaemonSet\", \"StatefulSet\", \"Job\"}\n}\n\nselector_match_labels_path(wl) := \"spec.selector\" if {\n\twl.kind == \"ReplicationController\"\n}\n\nselector_match_labels_path(wl) := \"spec.jobTemplate.spec.selector.matchLabels\" if {\n\twl.kind == \"CronJob\"\n}\n\nselector_match_expressions_path(wl) := \"spec.selector.matchExpressions\" if {\n\twl.kind in {\"Deployment\", \"ReplicaSet\", \"DaemonSet\", \"StatefulSet\", \"Job\"}\n}\n\nselector_match_expressions_path(wl) := \"spec.jobTemplate.spec.selector.matchExpressions\" if {\n\twl.kind == \"CronJob\"\n}\n\nselector_match_expressions_path(wl) := \"spec.selector\" if {\n\twl.kind == \"ReplicationController\"\n}\n\nselector_defined(selector) if {\n\tcount(object.get(selector, \"matchLabels\", {})) > 0\n}\n\nselector_defined(selector) if {\n\tcount(object.get(selector, \"matchExpressions\", [])) > 0\n}\n\nselector_matches(selector, labels) if {\n\tnot match_labels_mismatch(object.get(selector, \"matchLabels\", {}), labels)\n\tnot match_expressions_mismatch(object.get(selector, \"matchExpressions\", []), labels)\n}\n\nmatch_labels_mismatch(match_labels, labels) if {\n\tmatch_labels[k]\n\tnot labels[k] == match_labels[k]\n}\n\nmatch_expressions_mismatch(expressions, labels) if {\n\texpression := expressions[_]\n\tnot expression_matches(expression, labels)\n}\n\nexpression_matches(expression, labels) if {\n\texpression.operator == \"In\"\n\tlabel_value := labels[expression.key]\n\tlabel_value in object.get(expression, \"values\", [])\n}\n\nexpression_matches(expression, labels) if {\n\texpression.operator == \"NotIn\"\n\tnot labels[expression.key]\n}\n\nexpression_matches(expression, labels) if {\n\texpression.operator == \"NotIn\"\n\tlabel_value := labels[expression.key]\n\tnot label_value in object.get(expression, \"values\", [])\n}\n\nexpression_matches(expression, labels) if {\n\texpression.operator == \"Exists\"\n\tlabels[expression.key]\n}\n\nexpression_matches(expression, labels) if {\n\texpression.operator == \"DoesNotExist\"\n\tnot labels[expression.key]\n}\n\nselector_failed_path(selector, labels, match_labels_path, _) := match_labels_path if {\n\tmatch_labels_mismatch(object.get(selector, \"matchLabels\", {}), labels)\n}\n\nselector_failed_path(selector, labels, _, match_expressions_path) := match_expressions_path if {\n\tnot match_labels_mismatch(object.get(selector, \"matchLabels\", {}), labels)\n\tmatch_expressions_mismatch(object.get(selector, \"matchExpressions\", []), labels)\n}\n"
+                }
+            ]
+        }
+    ],
+    "ControlsIDs": [
+        "C-0018",
+        "C-0044",
+        "C-0056",
+        "C-0061",
+        "C-0073",
+        "C-0074",
+        "C-0075",
+        "C-0076",
+        "C-0077",
+        "C-0253",
+        "C-0268",
+        "C-0269",
+        "C-0270",
+        "C-0271",
+        "C-0292",
+        "C-0293",
+        "C-0294",
+        "C-0295",
+        "C-0296"
+    ]
+}
