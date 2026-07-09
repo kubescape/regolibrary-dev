@@ -36,13 +36,11 @@ deny contains msga if {
 	}
 }
 
-get_wl_connectedto_service(wl) := services if {
-	services := [service |
-		service := input[_]
-		service.kind == "Service"
-		wl_connectedto_service(wl, service)
-	]
-}
+get_wl_connectedto_service(wl) := [service |
+	service := input[_]
+	service.kind == "Service"
+	wl_connectedto_service(wl, service)
+]
 
 wl_connectedto_service(wl, service) if {
 	wl.metadata.namespace == service.metadata.namespace
