@@ -1,0 +1,601 @@
+{
+    "name": "AgentRuntimeHardening",
+    "description": "Evidence-based posture checks for Agent Sandbox and Agent Substrate custom resources.",
+    "attributes": {
+        "builtin": true
+    },
+    "scanningScope": {
+        "matches": [
+            "cluster",
+            "file"
+        ]
+    },
+    "typeTags": [
+        "compliance"
+    ],
+    "version": null,
+    "controls": [
+        {
+            "name": "Agent Sandbox hardened runtime class",
+            "attributes": {
+                "controlTypeTags": [
+                    "security"
+                ]
+            },
+            "description": "Ensure Sandbox and SandboxTemplate resources use an approved hardened runtimeClassName to isolate untrusted workloads from the host kernel.",
+            "remediation": "Set spec.podTemplate.spec.runtimeClassName on the Sandbox or SandboxTemplate to an approved hardened runtime.",
+            "test": "When hardenedSandboxRuntimeClasses is nonempty, check that each Sandbox or SandboxTemplate defines an approved runtimeClassName. Missing or empty configuration disables the check.",
+            "controlID": "C-0297",
+            "baseScore": 7.0,
+            "category": {
+                "name": "Workload",
+                "id": "Cat-5"
+            },
+            "scanningScope": {
+                "matches": [
+                    "cluster",
+                    "file"
+                ]
+            },
+            "rules": [
+                {
+                    "name": "agent-sandbox-hardened-runtime-class",
+                    "attributes": {
+                        "hostSensorRule": "false",
+                        "imageScanRelated": false
+                    },
+                    "ruleLanguage": "Rego",
+                    "match": [
+                        {
+                            "apiGroups": [
+                                "agents.x-k8s.io"
+                            ],
+                            "apiVersions": [
+                                "v1beta1"
+                            ],
+                            "resources": [
+                                "Sandbox"
+                            ]
+                        },
+                        {
+                            "apiGroups": [
+                                "extensions.agents.x-k8s.io"
+                            ],
+                            "apiVersions": [
+                                "v1beta1"
+                            ],
+                            "resources": [
+                                "SandboxTemplate"
+                            ]
+                        }
+                    ],
+                    "ruleDependencies": [],
+                    "configInputs": [
+                        "settings.postureControlInputs.hardenedSandboxRuntimeClasses"
+                    ],
+                    "controlConfigInputs": [
+                        {
+                            "path": "settings.postureControlInputs.hardenedSandboxRuntimeClasses",
+                            "name": "Hardened sandbox runtime classes",
+                            "description": "Approved runtimeClassName values for Sandbox and SandboxTemplate resources; a missing or empty list disables the check."
+                        }
+                    ],
+                    "description": "Checks Sandbox and SandboxTemplate runtimeClassName against hardenedSandboxRuntimeClasses; missing or empty configuration disables the check.",
+                    "remediation": "Set spec.podTemplate.spec.runtimeClassName to an approved hardened runtime such as gvisor.",
+                    "ruleQuery": "armo_builtins",
+                    "rule": "# regal ignore:directory-package-mismatch\npackage armo_builtins\n\nimport rego.v1\n\n# Deny SandboxTemplate when runtimeClassName is missing or empty.\ndeny contains msga if {\n\tallowed := object.get(data.postureControlInputs, \"hardenedSandboxRuntimeClasses\", [])\n\tcount(allowed) > 0\n\ttemplate := input[_]\n\ttemplate.kind in {\"Sandbox\", \"SandboxTemplate\"}\n\n\truntime_class := object.get(template, [\"spec\", \"podTemplate\", \"spec\", \"runtimeClassName\"], \"\")\n\n\truntime_class == \"\"\n\n\tmsga := {\n\t\t\"alertMessage\": sprintf(\"%s '%v' does not define runtimeClassName.\", [template.kind, template.metadata.name]),\n\t\t\"packagename\": \"armo_builtins\",\n\t\t\"alertScore\": 7,\n\t\t\"failedPaths\": [\"spec.podTemplate.spec.runtimeClassName\"],\n\t\t\"fixPaths\": [],\n\t\t\"alertObject\": {\"k8sApiObjects\": [template]},\n\t}\n}\n\n# Deny SandboxTemplate when runtimeClassName is not in the approved list.\ndeny contains msga if {\n\tallowed := object.get(data.postureControlInputs, \"hardenedSandboxRuntimeClasses\", [])\n\tcount(allowed) > 0\n\ttemplate := input[_]\n\ttemplate.kind in {\"Sandbox\", \"SandboxTemplate\"}\n\n\truntime_class := object.get(template, [\"spec\", \"podTemplate\", \"spec\", \"runtimeClassName\"], \"\")\n\n\truntime_class != \"\"\n\tnot runtime_class in allowed\n\n\tmsga := {\n\t\t\"alertMessage\": sprintf(\"%s '%v' uses runtimeClassName '%v', which is not in the approved hardened runtime list.\", [template.kind, template.metadata.name, runtime_class]),\n\t\t\"packagename\": \"armo_builtins\",\n\t\t\"alertScore\": 7,\n\t\t\"failedPaths\": [\"spec.podTemplate.spec.runtimeClassName\"],\n\t\t\"fixPaths\": [],\n\t\t\"alertObject\": {\"k8sApiObjects\": [template]},\n\t}\n}\n"
+                }
+            ]
+        },
+        {
+            "name": "Agent Sandbox service account token isolation",
+            "attributes": {
+                "controlTypeTags": [
+                    "security"
+                ]
+            },
+            "description": "Ensure Agent Sandbox workloads do not receive Kubernetes service account tokens unless an operator deliberately accepts that trust-boundary exception.",
+            "remediation": "Set spec.podTemplate.spec.automountServiceAccountToken to false on direct Sandbox resources. SandboxTemplate resources may omit the field because the template controller securely defaults it to false, but must never set it to true.",
+            "long_description": "Agent Sandbox workloads commonly execute untrusted or model-generated code. Mounting a Kubernetes service account token gives that code an identity it can use against the Kubernetes API. Direct Sandbox resources therefore need an explicit false value. SandboxTemplate resources are secure when the value is omitted because the Agent Sandbox template controller defaults it to false; this control preserves that API distinction instead of reporting a false positive.",
+            "test": "Check that direct Sandbox resources explicitly disable service account token automounting and that SandboxTemplate resources do not explicitly enable it.",
+            "controlID": "C-0309",
+            "baseScore": 7.0,
+            "category": {
+                "name": "Workload",
+                "id": "Cat-5"
+            },
+            "scanningScope": {
+                "matches": [
+                    "cluster",
+                    "file"
+                ]
+            },
+            "rules": [
+                {
+                    "name": "agent-sandbox-service-account-token",
+                    "attributes": {
+                        "hostSensorRule": "false",
+                        "imageScanRelated": false
+                    },
+                    "ruleLanguage": "Rego",
+                    "match": [
+                        {
+                            "apiGroups": [
+                                "agents.x-k8s.io"
+                            ],
+                            "apiVersions": [
+                                "v1beta1"
+                            ],
+                            "resources": [
+                                "Sandbox"
+                            ]
+                        },
+                        {
+                            "apiGroups": [
+                                "extensions.agents.x-k8s.io"
+                            ],
+                            "apiVersions": [
+                                "v1beta1"
+                            ],
+                            "resources": [
+                                "SandboxTemplate"
+                            ]
+                        }
+                    ],
+                    "ruleDependencies": [],
+                    "description": "Checks that Agent Sandbox workloads do not opt in to Kubernetes service account token automounting.",
+                    "remediation": "Set spec.podTemplate.spec.automountServiceAccountToken to false on direct Sandbox resources. For SandboxTemplate resources, either omit the field to retain its secure default or set it to false explicitly.",
+                    "ruleQuery": "armo_builtins",
+                    "rule": "# regal ignore:directory-package-mismatch\npackage armo_builtins\n\nimport rego.v1\n\n# A directly created Sandbox does not pass through the SandboxTemplate secure\n# default, so it must disable token automount explicitly.\ndeny contains msga if {\n\tsandbox := input[_]\n\tsandbox.kind == \"Sandbox\"\n\n\tautomount := object.get(sandbox, [\"spec\", \"podTemplate\", \"spec\", \"automountServiceAccountToken\"], null)\n\tautomount != false\n\n\tmsga := {\n\t\t\"alertMessage\": sprintf(\"Sandbox '%v' must set automountServiceAccountToken to false; direct Sandbox resources do not receive the SandboxTemplate secure default.\", [resource_name(sandbox)]),\n\t\t\"packagename\": \"armo_builtins\",\n\t\t\"alertScore\": 7,\n\t\t\"failedPaths\": [\"spec.podTemplate.spec.automountServiceAccountToken\"],\n\t\t\"fixPaths\": [],\n\t\t\"alertObject\": {\"k8sApiObjects\": [sandbox]},\n\t}\n}\n\n# SandboxTemplate processing defaults an omitted value to false. Only an\n# explicit true opts out of that protection and should fail posture checks.\ndeny contains msga if {\n\ttemplate := input[_]\n\ttemplate.kind == \"SandboxTemplate\"\n\n\tautomount := object.get(template, [\"spec\", \"podTemplate\", \"spec\", \"automountServiceAccountToken\"], false)\n\tautomount == true\n\n\tmsga := {\n\t\t\"alertMessage\": sprintf(\"SandboxTemplate '%v' explicitly enables service account token automounting; omit the field or set it to false.\", [resource_name(template)]),\n\t\t\"packagename\": \"armo_builtins\",\n\t\t\"alertScore\": 7,\n\t\t\"failedPaths\": [\"spec.podTemplate.spec.automountServiceAccountToken\"],\n\t\t\"fixPaths\": [],\n\t\t\"alertObject\": {\"k8sApiObjects\": [template]},\n\t}\n}\n\nresource_name(resource) := object.get(resource, [\"metadata\", \"name\"], \"<unnamed>\")\n"
+                }
+            ]
+        },
+        {
+            "name": "Agent Sandbox container resource limits",
+            "attributes": {
+                "controlTypeTags": [
+                    "security"
+                ]
+            },
+            "description": "Every regular and init container in an Agent Sandbox embedded PodSpec should declare CPU and memory limits.",
+            "remediation": "Set resources.limits.cpu and resources.limits.memory on every container and init container under spec.podTemplate.spec.",
+            "test": "Checks CPU and memory limits on every embedded container and init container.",
+            "controlID": "C-0311",
+            "baseScore": 7.0,
+            "category": {
+                "name": "Workload",
+                "id": "Cat-5"
+            },
+            "scanningScope": {
+                "matches": [
+                    "cluster",
+                    "file"
+                ]
+            },
+            "rules": [
+                {
+                    "name": "agent-sandbox-container-limits",
+                    "attributes": {},
+                    "ruleLanguage": "Rego",
+                    "match": [
+                        {
+                            "apiGroups": [
+                                "agents.x-k8s.io"
+                            ],
+                            "apiVersions": [
+                                "v1alpha1",
+                                "v1beta1"
+                            ],
+                            "resources": [
+                                "Sandbox"
+                            ]
+                        },
+                        {
+                            "apiGroups": [
+                                "extensions.agents.x-k8s.io"
+                            ],
+                            "apiVersions": [
+                                "v1alpha1",
+                                "v1beta1"
+                            ],
+                            "resources": [
+                                "SandboxTemplate"
+                            ]
+                        }
+                    ],
+                    "ruleDependencies": [],
+                    "description": "requires CPU and memory limits on all embedded containers",
+                    "remediation": "Set CPU and memory limits on every regular and init container.",
+                    "ruleQuery": "armo_builtins",
+                    "rule": "# regal ignore:directory-package-mismatch\npackage armo_builtins\n\nimport rego.v1\n\ndeny contains msg if {\n\twl := input[_]\n\twl.kind in {\"Sandbox\", \"SandboxTemplate\"}\n\tpod_spec := object.get(object.get(wl.spec, \"podTemplate\", {}), \"spec\", {})\n\tcontainer_sets := [{\"name\": \"containers\", \"items\": object.get(pod_spec, \"containers\", [])}, {\"name\": \"initContainers\", \"items\": object.get(pod_spec, \"initContainers\", [])}]\n\tcontainer_set := container_sets[_]\n\tcontainer := container_set.items[i]\n\tmissing := [resource | resource := [\"cpu\", \"memory\"][_]; object.get(container, [\"resources\", \"limits\", resource], \"\") == \"\"]\n\tcount(missing) > 0\n\tpath := sprintf(\"spec.podTemplate.spec.%s[%d].resources.limits\", [container_set.name, i])\n\tmsg := agent_limit_message(wl, container, missing, path)\n}\n\nagent_limit_message(wl, container, missing, path) := {\"alertMessage\": sprintf(\"Container %q is missing %v limits\", [container.name, missing]), \"packagename\": \"armo_builtins\", \"failedPaths\": [path], \"fixPaths\": [], \"alertScore\": 7, \"alertObject\": {\"k8sApiObjects\": [wl]}}\n"
+                }
+            ]
+        },
+        {
+            "name": "Agent runtime image digest pinning",
+            "attributes": {
+                "controlTypeTags": [
+                    "security"
+                ]
+            },
+            "description": "Images used by Agent Sandbox and Agent Substrate resources should be pinned to an exact SHA-256 digest.",
+            "remediation": "Use image references ending in @sha256: followed by exactly 64 lowercase hexadecimal characters.",
+            "test": "Checks Sandbox and SandboxTemplate containers and init containers, and WorkerPool spec.workerImage.",
+            "controlID": "C-0312",
+            "baseScore": 8.0,
+            "category": {
+                "name": "Supply chain",
+                "id": "Cat-6"
+            },
+            "scanningScope": {
+                "matches": [
+                    "cluster",
+                    "file"
+                ]
+            },
+            "rules": [
+                {
+                    "name": "agent-runtime-image-digests",
+                    "attributes": {},
+                    "ruleLanguage": "Rego",
+                    "match": [
+                        {
+                            "apiGroups": [
+                                "agents.x-k8s.io"
+                            ],
+                            "apiVersions": [
+                                "v1alpha1",
+                                "v1beta1"
+                            ],
+                            "resources": [
+                                "Sandbox"
+                            ]
+                        },
+                        {
+                            "apiGroups": [
+                                "extensions.agents.x-k8s.io"
+                            ],
+                            "apiVersions": [
+                                "v1alpha1",
+                                "v1beta1"
+                            ],
+                            "resources": [
+                                "SandboxTemplate"
+                            ]
+                        },
+                        {
+                            "apiGroups": [
+                                "ate.dev"
+                            ],
+                            "apiVersions": [
+                                "v1alpha1"
+                            ],
+                            "resources": [
+                                "WorkerPool"
+                            ]
+                        }
+                    ],
+                    "ruleDependencies": [],
+                    "description": "Requires exact lowercase SHA-256 image pins on Sandbox, SandboxTemplate and WorkerPool resources.",
+                    "remediation": "Use image@sha256:<64 lowercase or uppercase hexadecimal characters>.",
+                    "ruleQuery": "armo_builtins",
+                    "rule": "# regal ignore:directory-package-mismatch\npackage armo_builtins\n\nimport rego.v1\n\ndeny contains msg if {\n\twl := input[_]\n\timage_ref := agent_digest_image_refs(wl)[_]\n\tnot regex.match(`^.+@sha256:[a-f0-9]{64}$`, image_ref.image)\n\tmsg := agent_digest_message(wl, image_ref.path)\n}\n\nagent_digest_image_refs(wl) := [ref | some i; some set in [{\"name\": \"containers\", \"items\": object.get(pod_spec, \"containers\", [])}, {\"name\": \"initContainers\", \"items\": object.get(pod_spec, \"initContainers\", [])}]; c := set.items[i]; ref := {\"image\": c.image, \"path\": sprintf(\"spec.podTemplate.spec.%s[%d].image\", [set.name, i])}] if {\n\twl.kind in {\"Sandbox\", \"SandboxTemplate\"}\n\tpod_spec := object.get(object.get(wl.spec, \"podTemplate\", {}), \"spec\", {})\n}\n\nagent_digest_image_refs(wl) := [{\"image\": wl.spec.workerImage, \"path\": \"spec.workerImage\"}] if wl.kind == \"WorkerPool\"\n\nagent_digest_message(wl, path) := {\"alertMessage\": sprintf(\"%v image must be pinned to an exact SHA-256 digest\", [wl.kind]), \"packagename\": \"armo_builtins\", \"failedPaths\": [path], \"fixPaths\": [], \"alertScore\": 8, \"alertObject\": {\"k8sApiObjects\": [wl]}}\n"
+                }
+            ]
+        },
+        {
+            "name": "Agent runtime image registries",
+            "attributes": {
+                "controlTypeTags": [
+                    "security"
+                ]
+            },
+            "description": "Images used by Agent Sandbox and Agent Substrate resources should originate from an explicitly allowed registry.",
+            "remediation": "Use an image registry listed in imageRepositoryAllowList.",
+            "test": "Checks the registry portion of every image reference exposed by the supported agent APIs.",
+            "controlID": "C-0313",
+            "baseScore": 8.0,
+            "category": {
+                "name": "Supply chain",
+                "id": "Cat-6"
+            },
+            "scanningScope": {
+                "matches": [
+                    "cluster",
+                    "file"
+                ]
+            },
+            "rules": [
+                {
+                    "name": "agent-runtime-image-registries",
+                    "attributes": {},
+                    "ruleLanguage": "Rego",
+                    "match": [
+                        {
+                            "apiGroups": [
+                                "agents.x-k8s.io"
+                            ],
+                            "apiVersions": [
+                                "v1alpha1",
+                                "v1beta1"
+                            ],
+                            "resources": [
+                                "Sandbox"
+                            ]
+                        },
+                        {
+                            "apiGroups": [
+                                "extensions.agents.x-k8s.io"
+                            ],
+                            "apiVersions": [
+                                "v1alpha1",
+                                "v1beta1"
+                            ],
+                            "resources": [
+                                "SandboxTemplate"
+                            ]
+                        },
+                        {
+                            "apiGroups": [
+                                "ate.dev"
+                            ],
+                            "apiVersions": [
+                                "v1alpha1"
+                            ],
+                            "resources": [
+                                "WorkerPool"
+                            ]
+                        }
+                    ],
+                    "ruleDependencies": [],
+                    "description": "Checks Sandbox, SandboxTemplate and WorkerPool image registries against imageRepositoryAllowList.",
+                    "remediation": "Use a registry listed in imageRepositoryAllowList.",
+                    "ruleQuery": "armo_builtins",
+                    "configInputs": [
+                        "settings.postureControlInputs.imageRepositoryAllowList"
+                    ],
+                    "controlConfigInputs": [
+                        {
+                            "path": "settings.postureControlInputs.imageRepositoryAllowList",
+                            "name": "imageRepositoryAllowList",
+                            "description": "Configuration for agent-runtime-image-registries; an empty list disables this check."
+                        }
+                    ],
+                    "rule": "# regal ignore:directory-package-mismatch\npackage armo_builtins\n\nimport rego.v1\n\ndeny contains msg if {\n\tallowed := object.get(data.postureControlInputs, \"imageRepositoryAllowList\", [])\n\tcount(allowed) > 0\n\twl := input[_]\n\tref := agent_registry_image_refs(wl)[_]\n\tnot agent_registry_allowed(ref.image, allowed)\n\tmsg := agent_registry_message(wl, ref.path)\n}\n\nagent_registry_image_refs(wl) := [ref | some i; some set in [{\"name\": \"containers\", \"items\": object.get(pod_spec, \"containers\", [])}, {\"name\": \"initContainers\", \"items\": object.get(pod_spec, \"initContainers\", [])}]; c := set.items[i]; ref := {\"image\": c.image, \"path\": sprintf(\"spec.podTemplate.spec.%s[%d].image\", [set.name, i])}] if {\n\twl.kind in {\"Sandbox\", \"SandboxTemplate\"}\n\tpod_spec := object.get(object.get(wl.spec, \"podTemplate\", {}), \"spec\", {})\n}\n\nagent_registry_image_refs(wl) := [{\"image\": wl.spec.workerImage, \"path\": \"spec.workerImage\"}] if wl.kind == \"WorkerPool\"\n\nagent_registry_allowed(image, allowed) if {\n\tregistry := allowed[_]\n\tstartswith(image, concat(\"\", [registry, \"/\"]))\n}\n\nagent_registry_allowed(image, allowed) if {\n\t\"docker.io\" in allowed\n\tparts := split(image, \"/\")\n\tcount(parts) > 1\n\tfirst := parts[0]\n\tnot contains(first, \".\")\n\tnot contains(first, \":\")\n\tfirst != \"localhost\"\n}\n\nagent_registry_allowed(image, allowed) if {\n\t\"docker.io\" in allowed\n\tcount(split(image, \"/\")) == 1\n}\n\nagent_registry_message(wl, path) := {\"alertMessage\": sprintf(\"%v image uses a registry outside imageRepositoryAllowList\", [wl.kind]), \"packagename\": \"armo_builtins\", \"failedPaths\": [path], \"fixPaths\": [], \"alertScore\": 8, \"alertObject\": {\"k8sApiObjects\": [wl]}}\n"
+                }
+            ]
+        },
+        {
+            "name": "Agent Sandbox managed network policy",
+            "attributes": {
+                "controlTypeTags": [
+                    "security"
+                ]
+            },
+            "description": "SandboxTemplate networking should remain controller-managed. The managed default blocks private and internal destinations but still permits public internet; it is not strict default-deny egress.",
+            "remediation": "Set spec.networkPolicyManagement to Managed or omit it to use the API default. Use the separate strict-egress control when public internet must also be denied.",
+            "test": "Flags SandboxTemplate resources that explicitly opt out with networkPolicyManagement: Unmanaged.",
+            "controlID": "C-0314",
+            "baseScore": 7.0,
+            "category": {
+                "name": "Network",
+                "id": "Cat-4"
+            },
+            "scanningScope": {
+                "matches": [
+                    "cluster",
+                    "file"
+                ]
+            },
+            "rules": [
+                {
+                    "name": "agent-sandbox-managed-networking",
+                    "attributes": {},
+                    "ruleLanguage": "Rego",
+                    "match": [
+                        {
+                            "apiGroups": [
+                                "extensions.agents.x-k8s.io"
+                            ],
+                            "apiVersions": [
+                                "v1alpha1",
+                                "v1beta1"
+                            ],
+                            "resources": [
+                                "SandboxTemplate"
+                            ]
+                        }
+                    ],
+                    "ruleDependencies": [],
+                    "description": "requires controller-managed SandboxTemplate networking",
+                    "remediation": "Set networkPolicyManagement to Managed or omit it for the API default.",
+                    "ruleQuery": "armo_builtins",
+                    "rule": "# regal ignore:directory-package-mismatch\npackage armo_builtins\n\nimport rego.v1\n\ndeny contains msg if {\n\twl := input[_]\n\twl.kind == \"SandboxTemplate\"\n\tmanagement := object.get(wl, [\"spec\", \"networkPolicyManagement\"], null)\n\tmanagement != null\n\tmanagement != \"Managed\"\n\tmsg := {\"alertMessage\": \"SandboxTemplate explicitly disables managed networking\", \"packagename\": \"armo_builtins\", \"failedPaths\": [\"spec.networkPolicyManagement\"], \"fixPaths\": [{\"path\": \"spec.networkPolicyManagement\", \"value\": \"Managed\"}], \"alertScore\": 7, \"alertObject\": {\"k8sApiObjects\": [wl]}}\n}\n"
+                }
+            ]
+        },
+        {
+            "name": "Agent Sandbox strict egress policy",
+            "attributes": {
+                "controlTypeTags": [
+                    "security"
+                ]
+            },
+            "description": "When agentSandboxEgressMode is strict, SandboxTemplate must carry an explicit managed NetworkPolicy with no egress rules. The ordinary managed default still allows public internet and does not satisfy this control.",
+            "remediation": "Keep networkPolicyManagement Managed and explicitly set spec.networkPolicy.egress to an empty list. This mode does not permit any egress destinations.",
+            "test": "Enforces explicit default-deny egress only when strict mode is selected in control configuration.",
+            "controlID": "C-0315",
+            "baseScore": 8.0,
+            "category": {
+                "name": "Network",
+                "id": "Cat-4"
+            },
+            "scanningScope": {
+                "matches": [
+                    "cluster",
+                    "file"
+                ]
+            },
+            "rules": [
+                {
+                    "name": "agent-sandbox-strict-egress",
+                    "attributes": {},
+                    "ruleLanguage": "Rego",
+                    "match": [
+                        {
+                            "apiGroups": [
+                                "extensions.agents.x-k8s.io"
+                            ],
+                            "apiVersions": [
+                                "v1alpha1",
+                                "v1beta1"
+                            ],
+                            "resources": [
+                                "SandboxTemplate"
+                            ]
+                        }
+                    ],
+                    "ruleDependencies": [],
+                    "description": "requires explicit default-deny egress when strict mode is selected",
+                    "remediation": "Use Managed networking and an explicit networkPolicy with an empty egress list.",
+                    "ruleQuery": "armo_builtins",
+                    "configInputs": [
+                        "settings.postureControlInputs.agentSandboxEgressMode"
+                    ],
+                    "controlConfigInputs": [
+                        {
+                            "path": "settings.postureControlInputs.agentSandboxEgressMode",
+                            "name": "agentSandboxEgressMode",
+                            "description": "Configuration for agent-sandbox-strict-egress; an empty list disables this check."
+                        }
+                    ],
+                    "rule": "# regal ignore:directory-package-mismatch\npackage armo_builtins\n\nimport rego.v1\n\ndeny contains msg if {\n\t\"strict\" in object.get(data.postureControlInputs, \"agentSandboxEgressMode\", [\"managed\"])\n\twl := input[_]\n\twl.kind == \"SandboxTemplate\"\n\tnot agent_sandbox_has_strict_egress(wl)\n\tmsg := {\"alertMessage\": \"Strict mode requires an explicit managed default-deny egress policy; the managed default still permits public internet\", \"packagename\": \"armo_builtins\", \"failedPaths\": [\"spec.networkPolicy\"], \"fixPaths\": [], \"alertScore\": 8, \"alertObject\": {\"k8sApiObjects\": [wl]}}\n}\n\nagent_sandbox_has_strict_egress(wl) if {\n\tmanagement := object.get(wl, [\"spec\", \"networkPolicyManagement\"], null)\n\tmanagement in {null, \"Managed\"}\n\tpolicy := object.get(wl, [\"spec\", \"networkPolicy\"], null)\n\tis_object(policy)\n\tegress := object.get(policy, \"egress\", null)\n\tis_array(egress)\n\tcount(egress) == 0\n}\n"
+                }
+            ]
+        },
+        {
+            "name": "Agent Sandbox claim override restrictions",
+            "attributes": {
+                "controlTypeTags": [
+                    "security"
+                ]
+            },
+            "description": "SandboxTemplate should not let claims replace template environment variables or volume claim templates.",
+            "remediation": "Set envVarsInjectionPolicy and volumeClaimTemplatesPolicy to Disallowed or Allowed, not Overrides.",
+            "test": "Flags dangerous claim-time Overrides policies exposed by SandboxTemplate.",
+            "controlID": "C-0316",
+            "baseScore": 8.0,
+            "category": {
+                "name": "Workload",
+                "id": "Cat-5"
+            },
+            "scanningScope": {
+                "matches": [
+                    "cluster",
+                    "file"
+                ]
+            },
+            "rules": [
+                {
+                    "name": "agent-sandbox-claim-overrides",
+                    "attributes": {},
+                    "ruleLanguage": "Rego",
+                    "match": [
+                        {
+                            "apiGroups": [
+                                "extensions.agents.x-k8s.io"
+                            ],
+                            "apiVersions": [
+                                "v1alpha1",
+                                "v1beta1"
+                            ],
+                            "resources": [
+                                "SandboxTemplate"
+                            ]
+                        }
+                    ],
+                    "ruleDependencies": [],
+                    "description": "rejects dangerous claim-time Overrides policies",
+                    "remediation": "Use Disallowed or Allowed instead of Overrides.",
+                    "ruleQuery": "armo_builtins",
+                    "rule": "# regal ignore:directory-package-mismatch\npackage armo_builtins\n\nimport rego.v1\n\ndeny contains msg if {\n\twl := input[_]\n\twl.kind == \"SandboxTemplate\"\n\tfield := [\"envVarsInjectionPolicy\", \"volumeClaimTemplatesPolicy\"][_]\n\twl.spec[field] == \"Overrides\"\n\tpath := concat(\"\", [\"spec.\", field])\n\tmsg := {\"alertMessage\": sprintf(\"SandboxTemplate %s permits claims to replace template values\", [field]), \"packagename\": \"armo_builtins\", \"failedPaths\": [path], \"fixPaths\": [], \"alertScore\": 8, \"alertObject\": {\"k8sApiObjects\": [wl]}}\n}\n"
+                }
+            ]
+        },
+        {
+            "name": "Agent Substrate Worker Pod resource ceilings",
+            "attributes": {
+                "controlTypeTags": [
+                    "security"
+                ]
+            },
+            "description": "WorkerPool resource limits bound each worker Pod. They are not per-actor limits.",
+            "remediation": "Set spec.template.resources.limits.cpu and memory at or below configured cpu_limit_max and memory_limit_max values.",
+            "test": "Checks the WorkerPool Pod-level CPU and memory limit fields against configured ceilings.",
+            "controlID": "C-0317",
+            "baseScore": 7.0,
+            "category": {
+                "name": "Workload",
+                "id": "Cat-5"
+            },
+            "scanningScope": {
+                "matches": [
+                    "cluster",
+                    "file"
+                ]
+            },
+            "rules": [
+                {
+                    "name": "worker-pod-resource-ceilings",
+                    "attributes": {},
+                    "ruleLanguage": "Rego",
+                    "match": [
+                        {
+                            "apiGroups": [
+                                "ate.dev"
+                            ],
+                            "apiVersions": [
+                                "v1alpha1"
+                            ],
+                            "resources": [
+                                "WorkerPool"
+                            ]
+                        }
+                    ],
+                    "ruleDependencies": [],
+                    "description": "checks Worker Pod resource limits against configured ceilings",
+                    "remediation": "Set WorkerPool spec.template.resources.limits within configured maxima.",
+                    "ruleQuery": "armo_builtins",
+                    "configInputs": [
+                        "settings.postureControlInputs.cpu_limit_max",
+                        "settings.postureControlInputs.memory_limit_max"
+                    ],
+                    "controlConfigInputs": [
+                        {
+                            "path": "settings.postureControlInputs.cpu_limit_max",
+                            "name": "cpu_limit_max",
+                            "description": "Configuration for worker-pod-resource-ceilings; an empty list disables this check."
+                        },
+                        {
+                            "path": "settings.postureControlInputs.memory_limit_max",
+                            "name": "memory_limit_max",
+                            "description": "Configuration for worker-pod-resource-ceilings; an empty list disables this check."
+                        }
+                    ],
+                    "rule": "# regal ignore:directory-package-mismatch\npackage armo_builtins\n\nimport rego.v1\n\ndeny contains msg if {\n\tmaxima := object.get(data.postureControlInputs, \"cpu_limit_max\", [])\n\tcount(maxima) > 0\n\twl := input[_]\n\twl.kind == \"WorkerPool\"\n\tlimit := object.get(wl, [\"spec\", \"template\", \"resources\", \"limits\", \"cpu\"], \"\")\n\tworker_cpu_limit_invalid(limit, maxima[_])\n\tmsg := worker_ceiling_message(wl, \"spec.template.resources.limits.cpu\", \"CPU\")\n}\n\ndeny contains msg if {\n\tmaxima := object.get(data.postureControlInputs, \"memory_limit_max\", [])\n\tcount(maxima) > 0\n\twl := input[_]\n\twl.kind == \"WorkerPool\"\n\tlimit := object.get(wl, [\"spec\", \"template\", \"resources\", \"limits\", \"memory\"], \"\")\n\tworker_memory_limit_invalid(limit, maxima[_])\n\tmsg := worker_ceiling_message(wl, \"spec.template.resources.limits.memory\", \"memory\")\n}\n\nworker_cpu_limit_invalid(\"\", _)\n\nworker_cpu_limit_invalid(limit, maximum) if {\n\tlimit != \"\"\n\tworker_cpu_millicores(limit) > worker_cpu_millicores(maximum)\n}\n\nworker_memory_limit_invalid(\"\", _)\n\nworker_memory_limit_invalid(limit, maximum) if {\n\tlimit != \"\"\n\tworker_memory_bytes(limit) > worker_memory_bytes(maximum)\n}\n\nworker_ceiling_message(wl, path, resource) := {\"alertMessage\": sprintf(\"Worker Pod %s limit is missing or exceeds the configured ceiling\", [resource]), \"packagename\": \"armo_builtins\", \"failedPaths\": [path], \"fixPaths\": [], \"alertScore\": 7, \"alertObject\": {\"k8sApiObjects\": [wl]}}\n\nworker_cpu_millicores(q) := n if {\n\ts := sprintf(\"%v\", [q])\n\tendswith(s, \"n\")\n\tn := to_number(trim_suffix(s, \"n\")) / 1000000\n} else := n if {\n\ts := sprintf(\"%v\", [q])\n\tendswith(s, \"u\")\n\tn := to_number(trim_suffix(s, \"u\")) / 1000\n} else := n if {\n\ts := sprintf(\"%v\", [q])\n\tendswith(s, \"m\")\n\tn := to_number(trim_suffix(s, \"m\"))\n} else := n if {\n\ts := sprintf(\"%v\", [q])\n\tendswith(s, \"k\")\n\tn := to_number(trim_suffix(s, \"k\")) * 1000000\n} else := n if {\n\ts := sprintf(\"%v\", [q])\n\tendswith(s, \"M\")\n\tn := to_number(trim_suffix(s, \"M\")) * 1000000000\n} else := n if {\n\ts := sprintf(\"%v\", [q])\n\tendswith(s, \"G\")\n\tn := to_number(trim_suffix(s, \"G\")) * 1000000000000\n} else := n if {\n\ts := sprintf(\"%v\", [q])\n\tendswith(s, \"T\")\n\tn := to_number(trim_suffix(s, \"T\")) * 1000000000000000\n} else := n if {\n\ts := sprintf(\"%v\", [q])\n\tendswith(s, \"P\")\n\tn := to_number(trim_suffix(s, \"P\")) * 1000000000000000000\n} else := n if {\n\ts := sprintf(\"%v\", [q])\n\tendswith(s, \"E\")\n\tn := to_number(trim_suffix(s, \"E\")) * 1000000000000000000000\n} else := n if {\n\tn := to_number(q) * 1000\n}\n\nworker_memory_bytes(q) := n if {\n\ts := sprintf(\"%v\", [q])\n\tendswith(s, \"Ki\")\n\tn := to_number(trim_suffix(s, \"Ki\")) * 1024\n} else := n if {\n\ts := sprintf(\"%v\", [q])\n\tendswith(s, \"Mi\")\n\tn := to_number(trim_suffix(s, \"Mi\")) * 1048576\n} else := n if {\n\ts := sprintf(\"%v\", [q])\n\tendswith(s, \"Gi\")\n\tn := to_number(trim_suffix(s, \"Gi\")) * 1073741824\n} else := n if {\n\ts := sprintf(\"%v\", [q])\n\tendswith(s, \"Ti\")\n\tn := to_number(trim_suffix(s, \"Ti\")) * 1099511627776\n} else := n if {\n\ts := sprintf(\"%v\", [q])\n\tendswith(s, \"Pi\")\n\tn := to_number(trim_suffix(s, \"Pi\")) * 1125899906842624\n} else := n if {\n\ts := sprintf(\"%v\", [q])\n\tendswith(s, \"Ei\")\n\tn := to_number(trim_suffix(s, \"Ei\")) * 1152921504606846976\n} else := n if {\n\ts := sprintf(\"%v\", [q])\n\tendswith(s, \"k\")\n\tn := to_number(trim_suffix(s, \"k\")) * 1000\n} else := n if {\n\ts := sprintf(\"%v\", [q])\n\tendswith(s, \"K\")\n\tn := to_number(trim_suffix(s, \"K\")) * 1000\n} else := n if {\n\ts := sprintf(\"%v\", [q])\n\tendswith(s, \"M\")\n\tn := to_number(trim_suffix(s, \"M\")) * 1000000\n} else := n if {\n\ts := sprintf(\"%v\", [q])\n\tendswith(s, \"G\")\n\tn := to_number(trim_suffix(s, \"G\")) * 1000000000\n} else := n if {\n\ts := sprintf(\"%v\", [q])\n\tendswith(s, \"T\")\n\tn := to_number(trim_suffix(s, \"T\")) * 1000000000000\n} else := n if {\n\ts := sprintf(\"%v\", [q])\n\tendswith(s, \"P\")\n\tn := to_number(trim_suffix(s, \"P\")) * 1000000000000000\n} else := n if {\n\ts := sprintf(\"%v\", [q])\n\tendswith(s, \"E\")\n\tn := to_number(trim_suffix(s, \"E\")) * 1000000000000000000\n} else := n if {\n\ts := sprintf(\"%v\", [q])\n\tendswith(s, \"m\")\n\tn := to_number(trim_suffix(s, \"m\")) / 1000\n} else := n if {\n\tn := to_number(q)\n}\n"
+                }
+            ]
+        }
+    ],
+    "ControlsIDs": [
+        "C-0297",
+        "C-0309",
+        "C-0311",
+        "C-0312",
+        "C-0313",
+        "C-0314",
+        "C-0315",
+        "C-0316",
+        "C-0317"
+    ]
+}
