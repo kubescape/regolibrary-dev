@@ -1,0 +1,278 @@
+{
+    "name": "NodeVulnerabilities",
+    "description": "Known vulnerabilities in the software the cluster runs on: the Kubernetes API server, the kubelet and the container runtime.",
+    "attributes": {
+        "builtin": true
+    },
+    "scanningScope": {
+        "matches": [
+            "cluster"
+        ]
+    },
+    "typeTags": [
+        "security"
+    ],
+    "version": null,
+    "controls": [
+        {
+            "controlID": "C-0320",
+            "name": "Kubernetes API server has known vulnerabilities",
+            "description": "Detects when the Kubernetes API server version has known vulnerabilities at or above the configured minimum severity.",
+            "long_description": "The Kubernetes API server is part of the cluster itself, so a known vulnerability in it is exposed regardless of how well the workloads are configured. Kubescape reads the Kubernetes API server version from the Kubernetes API and matches it against the same vulnerability database used for image scanning. Kubernetes CVEs are attributed to a component only when the official Kubernetes CVE feed lists it as affected, so a vulnerability in another component, or one limited to another operating system, does not fail this control. Versions that cannot be assessed are reported as coverage gaps rather than as passed.",
+            "remediation": "Upgrade the control plane to a Kubernetes patch release that fixes the listed vulnerabilities.",
+            "test": "Checks the vulnerabilities found for the Kubernetes API server version, filtered by the configured minimum severity, fix availability and vendor build settings.",
+            "attributes": {
+                "controlTypeTags": [
+                    "security",
+                    "compliance"
+                ]
+            },
+            "baseScore": 8.0,
+            "category": {
+                "name": "Control plane",
+                "id": "Cat-1"
+            },
+            "scanningScope": {
+                "matches": [
+                    "cluster"
+                ]
+            },
+            "rules": [
+                {
+                    "name": "component-vulnerabilities-api-server",
+                    "attributes": {},
+                    "ruleLanguage": "Rego",
+                    "match": [
+                        {
+                            "apiGroups": [
+                                ""
+                            ],
+                            "apiVersions": [
+                                "v1"
+                            ],
+                            "resources": [
+                                "Node"
+                            ]
+                        }
+                    ],
+                    "dynamicMatch": [
+                        {
+                            "apiGroups": [
+                                "componentvulns.kubescape.cloud"
+                            ],
+                            "apiVersions": [
+                                "v1beta0"
+                            ],
+                            "resources": [
+                                "APIServerVulnerabilities"
+                            ]
+                        }
+                    ],
+                    "ruleDependencies": [],
+                    "configInputs": [
+                        "settings.postureControlInputs.componentVulnMinSeverity",
+                        "settings.postureControlInputs.componentVulnOnlyWithFix",
+                        "settings.postureControlInputs.componentVulnCountVendorBuilds"
+                    ],
+                    "controlConfigInputs": [
+                        {
+                            "path": "settings.postureControlInputs.componentVulnMinSeverity",
+                            "name": "Minimum severity",
+                            "description": "The lowest vulnerability severity that fails the control: Negligible, Low, Medium, High or Critical."
+                        },
+                        {
+                            "path": "settings.postureControlInputs.componentVulnOnlyWithFix",
+                            "name": "Only vulnerabilities with a fix",
+                            "description": "When true, only vulnerabilities with a fixed version available fail the control."
+                        },
+                        {
+                            "path": "settings.postureControlInputs.componentVulnCountVendorBuilds",
+                            "name": "Count vendor builds",
+                            "description": "When true, vulnerabilities in vendor builds (for example EKS, GKE or AKS versions) fail the control. Vendors may backport fixes without changing the upstream version, so these findings are not counted by default."
+                        }
+                    ],
+                    "description": "Fails when the Kubernetes API server version has known vulnerabilities at or above the configured minimum severity.",
+                    "remediation": "Upgrade the control plane to a Kubernetes patch release that fixes the listed vulnerabilities.",
+                    "ruleQuery": "armo_builtins",
+                    "rule": "# regal ignore:directory-package-mismatch\npackage armo_builtins\n\nimport rego.v1\n\ndeny contains msga if {\n\tsome res in input\n\tres.apiVersion == \"componentvulns.kubescape.cloud/v1beta0\"\n\tres.kind == \"APIServerVulnerabilities\"\n\tcounted_assessment(res)\n\n\tfailing := [i | some i, v in res.data.vulnerabilities; reportable(v)]\n\tcount(failing) > 0\n\tvuln_paths := [sprintf(\"data.vulnerabilities[%d]\", [i]) | some i in failing]\n\n\tmsga := {\n\t\t\"alertMessage\": sprintf(\"kube-apiserver %v has known vulnerabilities: %v\", [res.data.version, concat(\", \", [res.data.vulnerabilities[i].id | some i in failing])]),\n\t\t\"packagename\": \"armo_builtins\",\n\t\t\"alertScore\": 8,\n\t\t\"reviewPaths\": vuln_paths,\n\t\t\"failedPaths\": vuln_paths,\n\t\t\"fixPaths\": [],\n\t\t\"alertObject\": {\"k8sApiObjects\": [res]},\n\t}\n}\n\ncounted_assessment(res) if res.data.assessment == \"verified\"\n\ncounted_assessment(res) if {\n\tres.data.assessment == \"vendor-build\"\n\tenabled(\"componentVulnCountVendorBuilds\")\n}\n\nreportable(v) if {\n\tseverity_rank(v.severity) >= min_severity_rank(data.postureControlInputs)\n\tfix_requirement_met(v)\n}\n\nfix_requirement_met(_) if not enabled(\"componentVulnOnlyWithFix\")\n\nfix_requirement_met(v) if v.fixState == \"fixed\"\n\nenabled(name) if lower(data.postureControlInputs[name][_]) == \"true\"\n\nseverity_rank(s) := object.get(\n\t{\"negligible\": 1, \"low\": 2, \"medium\": 3, \"high\": 4, \"critical\": 5},\n\tlower(s),\n\t0,\n)\n\nmin_severity_rank(inputs) := min(ranks) if {\n\tranks := [r | some s in inputs.componentVulnMinSeverity; r := severity_rank(s); r > 0]\n\tcount(ranks) > 0\n} else := severity_rank(\"High\")\n",
+                    "resourceEnumerator": "# regal ignore:directory-package-mismatch\npackage armo_builtins\n\nimport rego.v1\n\ndeny contains msga if {\n\tsome res in input\n\tres.apiVersion == \"componentvulns.kubescape.cloud/v1beta0\"\n\tres.kind == \"APIServerVulnerabilities\"\n\n\tmsga := {\n\t\t\"alertMessage\": \"\",\n\t\t\"packagename\": \"armo_builtins\",\n\t\t\"alertScore\": 0,\n\t\t\"failedPaths\": [],\n\t\t\"fixPaths\": [],\n\t\t\"alertObject\": {\"k8sApiObjects\": [res]},\n\t}\n}\n"
+                }
+            ]
+        },
+        {
+            "controlID": "C-0321",
+            "name": "Kubelet has known vulnerabilities",
+            "description": "Detects nodes whose kubelet version has known vulnerabilities at or above the configured minimum severity.",
+            "long_description": "The kubelet is part of the cluster itself, so a known vulnerability in it is exposed regardless of how well the workloads are configured. Kubescape reads the kubelet version of each node from the Kubernetes API and matches it against the same vulnerability database used for image scanning. Kubernetes CVEs are attributed to a component only when the official Kubernetes CVE feed lists it as affected, so a vulnerability in another component, or one limited to another operating system, does not fail this control. Versions that cannot be assessed are reported as coverage gaps rather than as passed.",
+            "remediation": "Upgrade the node's kubelet to a Kubernetes patch release that fixes the listed vulnerabilities, for example by upgrading the node pool.",
+            "test": "Checks the vulnerabilities found for the kubelet version of each node, filtered by the configured minimum severity, fix availability and vendor build settings.",
+            "attributes": {
+                "controlTypeTags": [
+                    "security",
+                    "compliance"
+                ]
+            },
+            "baseScore": 7.0,
+            "category": {
+                "name": "Control plane",
+                "id": "Cat-1"
+            },
+            "scanningScope": {
+                "matches": [
+                    "cluster"
+                ]
+            },
+            "rules": [
+                {
+                    "name": "component-vulnerabilities-kubelet",
+                    "attributes": {},
+                    "ruleLanguage": "Rego",
+                    "match": [
+                        {
+                            "apiGroups": [
+                                ""
+                            ],
+                            "apiVersions": [
+                                "v1"
+                            ],
+                            "resources": [
+                                "Node"
+                            ]
+                        }
+                    ],
+                    "dynamicMatch": [
+                        {
+                            "apiGroups": [
+                                "componentvulns.kubescape.cloud"
+                            ],
+                            "apiVersions": [
+                                "v1beta0"
+                            ],
+                            "resources": [
+                                "KubeletVulnerabilities"
+                            ]
+                        }
+                    ],
+                    "ruleDependencies": [],
+                    "configInputs": [
+                        "settings.postureControlInputs.componentVulnMinSeverity",
+                        "settings.postureControlInputs.componentVulnOnlyWithFix",
+                        "settings.postureControlInputs.componentVulnCountVendorBuilds"
+                    ],
+                    "controlConfigInputs": [
+                        {
+                            "path": "settings.postureControlInputs.componentVulnMinSeverity",
+                            "name": "Minimum severity",
+                            "description": "The lowest vulnerability severity that fails the control: Negligible, Low, Medium, High or Critical."
+                        },
+                        {
+                            "path": "settings.postureControlInputs.componentVulnOnlyWithFix",
+                            "name": "Only vulnerabilities with a fix",
+                            "description": "When true, only vulnerabilities with a fixed version available fail the control."
+                        },
+                        {
+                            "path": "settings.postureControlInputs.componentVulnCountVendorBuilds",
+                            "name": "Count vendor builds",
+                            "description": "When true, vulnerabilities in vendor builds (for example EKS, GKE or AKS versions) fail the control. Vendors may backport fixes without changing the upstream version, so these findings are not counted by default."
+                        }
+                    ],
+                    "description": "Fails for each node whose kubelet version has known vulnerabilities at or above the configured minimum severity.",
+                    "remediation": "Upgrade the node's kubelet to a Kubernetes patch release that fixes the listed vulnerabilities, for example by upgrading the node pool.",
+                    "ruleQuery": "armo_builtins",
+                    "rule": "# regal ignore:directory-package-mismatch\npackage armo_builtins\n\nimport rego.v1\n\ndeny contains msga if {\n\tnodes := {n.metadata.name: n | some n in input; n.kind == \"Node\"}\n\n\tsome res in input\n\tres.apiVersion == \"componentvulns.kubescape.cloud/v1beta0\"\n\tres.kind == \"KubeletVulnerabilities\"\n\tcounted_assessment(res)\n\n\tnode := nodes[res.metadata.name]\n\n\tfailing := [i | some i, v in res.data.vulnerabilities; reportable(v)]\n\tcount(failing) > 0\n\tvuln_paths := [sprintf(\"data.vulnerabilities[%d]\", [i]) | some i in failing]\n\n\tmsga := {\n\t\t\"alertMessage\": sprintf(\"kubelet %v on node '%v' has known vulnerabilities: %v\", [res.data.version, node.metadata.name, concat(\", \", [res.data.vulnerabilities[i].id | some i in failing])]),\n\t\t\"packagename\": \"armo_builtins\",\n\t\t\"alertScore\": 7,\n\t\t\"reviewPaths\": [\"status.nodeInfo.kubeletVersion\"],\n\t\t\"failedPaths\": [\"status.nodeInfo.kubeletVersion\"],\n\t\t\"fixPaths\": [],\n\t\t\"alertObject\": {\"k8sApiObjects\": [node]},\n\t\t\"relatedObjects\": [{\n\t\t\t\"object\": res,\n\t\t\t\"reviewPaths\": vuln_paths,\n\t\t\t\"failedPaths\": vuln_paths,\n\t\t\t\"fixPaths\": [],\n\t\t}],\n\t}\n}\n\ncounted_assessment(res) if res.data.assessment == \"verified\"\n\ncounted_assessment(res) if {\n\tres.data.assessment == \"vendor-build\"\n\tenabled(\"componentVulnCountVendorBuilds\")\n}\n\nreportable(v) if {\n\tseverity_rank(v.severity) >= min_severity_rank(data.postureControlInputs)\n\tfix_requirement_met(v)\n}\n\nfix_requirement_met(_) if not enabled(\"componentVulnOnlyWithFix\")\n\nfix_requirement_met(v) if v.fixState == \"fixed\"\n\nenabled(name) if lower(data.postureControlInputs[name][_]) == \"true\"\n\nseverity_rank(s) := object.get(\n\t{\"negligible\": 1, \"low\": 2, \"medium\": 3, \"high\": 4, \"critical\": 5},\n\tlower(s),\n\t0,\n)\n\nmin_severity_rank(inputs) := min(ranks) if {\n\tranks := [r | some s in inputs.componentVulnMinSeverity; r := severity_rank(s); r > 0]\n\tcount(ranks) > 0\n} else := severity_rank(\"High\")\n",
+                    "resourceEnumerator": "# regal ignore:directory-package-mismatch\npackage armo_builtins\n\nimport rego.v1\n\ndeny contains msga if {\n\tassessed := {res.metadata.name |\n\t\tsome res in input\n\t\tres.apiVersion == \"componentvulns.kubescape.cloud/v1beta0\"\n\t\tres.kind == \"KubeletVulnerabilities\"\n\t}\n\n\tsome node in input\n\tnode.kind == \"Node\"\n\tnode.metadata.name in assessed\n\n\tmsga := {\n\t\t\"alertMessage\": \"\",\n\t\t\"packagename\": \"armo_builtins\",\n\t\t\"alertScore\": 0,\n\t\t\"failedPaths\": [],\n\t\t\"fixPaths\": [],\n\t\t\"alertObject\": {\"k8sApiObjects\": [node]},\n\t}\n}\n"
+                }
+            ]
+        },
+        {
+            "controlID": "C-0322",
+            "name": "Container runtime has known vulnerabilities",
+            "description": "Detects nodes whose containerd or CRI-O version has known vulnerabilities at or above the configured minimum severity.",
+            "long_description": "The container runtime is part of the cluster itself, so a known vulnerability in it is exposed regardless of how well the workloads are configured. Kubescape reads the container runtime version of each node from the Kubernetes API and matches it against the same vulnerability database used for image scanning. Versions that cannot be assessed are reported as coverage gaps rather than as passed.",
+            "remediation": "Upgrade containerd or CRI-O on the node to a release that fixes the listed vulnerabilities, for example by moving the node pool to a newer node image.",
+            "test": "Checks the vulnerabilities found for the container runtime version of each node, filtered by the configured minimum severity, fix availability and vendor build settings.",
+            "attributes": {
+                "controlTypeTags": [
+                    "security",
+                    "compliance"
+                ]
+            },
+            "baseScore": 7.0,
+            "category": {
+                "name": "Node escape",
+                "id": "Cat-9"
+            },
+            "scanningScope": {
+                "matches": [
+                    "cluster"
+                ]
+            },
+            "rules": [
+                {
+                    "name": "component-vulnerabilities-container-runtime",
+                    "attributes": {},
+                    "ruleLanguage": "Rego",
+                    "match": [
+                        {
+                            "apiGroups": [
+                                ""
+                            ],
+                            "apiVersions": [
+                                "v1"
+                            ],
+                            "resources": [
+                                "Node"
+                            ]
+                        }
+                    ],
+                    "dynamicMatch": [
+                        {
+                            "apiGroups": [
+                                "componentvulns.kubescape.cloud"
+                            ],
+                            "apiVersions": [
+                                "v1beta0"
+                            ],
+                            "resources": [
+                                "ContainerRuntimeVulnerabilities"
+                            ]
+                        }
+                    ],
+                    "ruleDependencies": [],
+                    "configInputs": [
+                        "settings.postureControlInputs.componentVulnMinSeverity",
+                        "settings.postureControlInputs.componentVulnOnlyWithFix",
+                        "settings.postureControlInputs.componentVulnCountVendorBuilds"
+                    ],
+                    "controlConfigInputs": [
+                        {
+                            "path": "settings.postureControlInputs.componentVulnMinSeverity",
+                            "name": "Minimum severity",
+                            "description": "The lowest vulnerability severity that fails the control: Negligible, Low, Medium, High or Critical."
+                        },
+                        {
+                            "path": "settings.postureControlInputs.componentVulnOnlyWithFix",
+                            "name": "Only vulnerabilities with a fix",
+                            "description": "When true, only vulnerabilities with a fixed version available fail the control."
+                        },
+                        {
+                            "path": "settings.postureControlInputs.componentVulnCountVendorBuilds",
+                            "name": "Count vendor builds",
+                            "description": "When true, vulnerabilities in vendor builds (for example EKS, GKE or AKS versions) fail the control. Vendors may backport fixes without changing the upstream version, so these findings are not counted by default."
+                        }
+                    ],
+                    "description": "Fails for each node whose containerd or CRI-O version has known vulnerabilities at or above the configured minimum severity.",
+                    "remediation": "Upgrade containerd or CRI-O on the node to a release that fixes the listed vulnerabilities, for example by moving the node pool to a newer node image.",
+                    "ruleQuery": "armo_builtins",
+                    "rule": "# regal ignore:directory-package-mismatch\npackage armo_builtins\n\nimport rego.v1\n\ndeny contains msga if {\n\tnodes := {n.metadata.name: n | some n in input; n.kind == \"Node\"}\n\n\tsome res in input\n\tres.apiVersion == \"componentvulns.kubescape.cloud/v1beta0\"\n\tres.kind == \"ContainerRuntimeVulnerabilities\"\n\tcounted_assessment(res)\n\n\tnode := nodes[res.metadata.name]\n\n\tfailing := [i | some i, v in res.data.vulnerabilities; reportable(v)]\n\tcount(failing) > 0\n\tvuln_paths := [sprintf(\"data.vulnerabilities[%d]\", [i]) | some i in failing]\n\n\tmsga := {\n\t\t\"alertMessage\": sprintf(\"%v %v on node '%v' has known vulnerabilities: %v\", [res.data.component, res.data.version, node.metadata.name, concat(\", \", [res.data.vulnerabilities[i].id | some i in failing])]),\n\t\t\"packagename\": \"armo_builtins\",\n\t\t\"alertScore\": 7,\n\t\t\"reviewPaths\": [\"status.nodeInfo.containerRuntimeVersion\"],\n\t\t\"failedPaths\": [\"status.nodeInfo.containerRuntimeVersion\"],\n\t\t\"fixPaths\": [],\n\t\t\"alertObject\": {\"k8sApiObjects\": [node]},\n\t\t\"relatedObjects\": [{\n\t\t\t\"object\": res,\n\t\t\t\"reviewPaths\": vuln_paths,\n\t\t\t\"failedPaths\": vuln_paths,\n\t\t\t\"fixPaths\": [],\n\t\t}],\n\t}\n}\n\ncounted_assessment(res) if res.data.assessment == \"verified\"\n\ncounted_assessment(res) if {\n\tres.data.assessment == \"vendor-build\"\n\tenabled(\"componentVulnCountVendorBuilds\")\n}\n\nreportable(v) if {\n\tseverity_rank(v.severity) >= min_severity_rank(data.postureControlInputs)\n\tfix_requirement_met(v)\n}\n\nfix_requirement_met(_) if not enabled(\"componentVulnOnlyWithFix\")\n\nfix_requirement_met(v) if v.fixState == \"fixed\"\n\nenabled(name) if lower(data.postureControlInputs[name][_]) == \"true\"\n\nseverity_rank(s) := object.get(\n\t{\"negligible\": 1, \"low\": 2, \"medium\": 3, \"high\": 4, \"critical\": 5},\n\tlower(s),\n\t0,\n)\n\nmin_severity_rank(inputs) := min(ranks) if {\n\tranks := [r | some s in inputs.componentVulnMinSeverity; r := severity_rank(s); r > 0]\n\tcount(ranks) > 0\n} else := severity_rank(\"High\")\n",
+                    "resourceEnumerator": "# regal ignore:directory-package-mismatch\npackage armo_builtins\n\nimport rego.v1\n\ndeny contains msga if {\n\tassessed := {res.metadata.name |\n\t\tsome res in input\n\t\tres.apiVersion == \"componentvulns.kubescape.cloud/v1beta0\"\n\t\tres.kind == \"ContainerRuntimeVulnerabilities\"\n\t}\n\n\tsome node in input\n\tnode.kind == \"Node\"\n\tnode.metadata.name in assessed\n\n\tmsga := {\n\t\t\"alertMessage\": \"\",\n\t\t\"packagename\": \"armo_builtins\",\n\t\t\"alertScore\": 0,\n\t\t\"failedPaths\": [],\n\t\t\"fixPaths\": [],\n\t\t\"alertObject\": {\"k8sApiObjects\": [node]},\n\t}\n}\n"
+                }
+            ]
+        }
+    ],
+    "ControlsIDs": [
+        "C-0320",
+        "C-0321",
+        "C-0322"
+    ]
+}
